@@ -64,6 +64,8 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
             tools=[
                 "mcp__supabase__read_project",
                 "mcp__pricing__get_modules",
+                "mcp__feedback__search_similar_cases",
+                "mcp__feedback__get_active_constraints",
             ],
             model="sonnet",
         ),
@@ -86,6 +88,7 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
                 "mcp__pricing__get_prices",
                 "mcp__pricing__get_installation_cost",
                 "mcp__supabase__save_quote",
+                "mcp__feedback__get_price_calibration",
             ],
             model="haiku",
         ),

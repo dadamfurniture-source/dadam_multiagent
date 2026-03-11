@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import accounting, orders, projects
+from api.routes import accounting, feedback, orders, projects
 from shared.config import settings
 
 
@@ -35,6 +35,7 @@ app.add_middleware(
 app.include_router(projects.router, prefix="/api/v1")
 app.include_router(orders.router, prefix="/api/v1")
 app.include_router(accounting.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
 
 
 @app.get("/health")
