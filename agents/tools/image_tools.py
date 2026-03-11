@@ -1,5 +1,10 @@
-"""이미지 생성 MCP 도구 - Gemini + Flux LoRA"""
+"""Image Generation MCP Tools — Gemini 2.5 Flash Image + Flux LoRA
 
+Pipeline: Cleanup(Gemini) → Furniture(Flux LoRA) → Correction(Gemini) → Open(Gemini)
+Prompts must be kept under 500 chars for Gemini reliability.
+"""
+
+import asyncio
 import base64
 import json
 import os
@@ -11,23 +16,30 @@ from shared.constants import LORA_MODELS
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
-GEMINI_MODEL = "gemini-2.5-flash-preview-04-17"
+
+# Production-verified Gemini model for image generation
+GEMINI_MODEL = "gemini-2.5-flash-image"
 
 
 async def _call_gemini_image(prompt: str, reference_image_b64: str | None = None) -> str:
-    """Gemini API로 이미지 생성, base64 반환"""
+    """Call Gemini Image API. Returns base64-encoded image.
+
+    IMPORTANT: Keep prompt under 500 chars for reliability.
+    Longer prompts may cause IMAGE_OTHER errors in production.
+    """
+    if len(prompt) > 500:
+        prompt = prompt[:497] + "..."
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
     parts = []
     if reference_image_b64:
-        parts.append(
-            {
-                "inlineData": {
-                    "mimeType": "image/png",
-                    "data": reference_image_b64,
-                }
+        parts.append({
+            "inlineData": {
+                "mimeType": "image/png",
+                "data": reference_image_b64,
             }
-        )
+        })
     parts.append({"text": prompt})
 
     body = {
@@ -46,28 +58,35 @@ async def _call_gemini_image(prompt: str, reference_image_b64: str | None = None
         resp.raise_for_status()
         data = resp.json()
 
-    # 이미지 파트 추출
+    # Extract image from response
     for candidate in data.get("candidates", []):
         for part in candidate.get("content", {}).get("parts", []):
             if "inlineData" in part:
                 return part["inlineData"]["data"]
 
-    raise ValueError("Gemini 응답에 이미지가 없습니다")
+    # Check for safety/error blocks
+    block_reason = data.get("promptFeedback", {}).get("blockReason")
+    if block_reason:
+        raise ValueError(f"Gemini blocked: {block_reason}")
+
+    raise ValueError("No image in Gemini response")
 
 
 async def _call_flux_lora(category: str, prompt: str) -> str:
-    """Replicate Flux LoRA로 가구 이미지 생성, base64 반환"""
+    """Call Replicate Flux LoRA for furniture image generation. Returns base64."""
     lora_name = LORA_MODELS.get(category, category)
     model_owner = "dadamfurniture-source"
     trigger_word = f"DADAM_{lora_name.upper()}"
 
     full_prompt = f"{trigger_word} {prompt}"
 
+    headers = {"Authorization": f"Bearer {REPLICATE_API_TOKEN}"}
+
     async with httpx.AsyncClient(timeout=180) as client:
-        # 예측 생성
+        # Create prediction
         resp = await client.post(
             "https://api.replicate.com/v1/predictions",
-            headers={"Authorization": f"Bearer {REPLICATE_API_TOKEN}"},
+            headers=headers,
             json={
                 "model": f"{model_owner}/{lora_name}",
                 "input": {
@@ -82,120 +101,157 @@ async def _call_flux_lora(category: str, prompt: str) -> str:
         resp.raise_for_status()
         prediction = resp.json()
 
-        # 완료 대기 (폴링)
+        # Poll for completion (max 3 minutes)
         prediction_url = prediction["urls"]["get"]
-        for _ in range(60):  # 최대 3분
-            import asyncio
-
+        for _ in range(60):
             await asyncio.sleep(3)
-            status_resp = await client.get(
-                prediction_url,
-                headers={"Authorization": f"Bearer {REPLICATE_API_TOKEN}"},
-            )
+            status_resp = await client.get(prediction_url, headers=headers)
             status_data = status_resp.json()
 
             if status_data["status"] == "succeeded":
                 image_url = status_data["output"][0]
-                # 이미지 다운로드 후 base64 변환
                 img_resp = await client.get(image_url)
                 return base64.b64encode(img_resp.content).decode()
 
             if status_data["status"] == "failed":
-                raise ValueError(f"Flux LoRA 실패: {status_data.get('error')}")
+                raise ValueError(f"Flux LoRA failed: {status_data.get('error')}")
 
-    raise TimeoutError("Flux LoRA 타임아웃")
+    raise TimeoutError("Flux LoRA prediction timed out (3min)")
+
+
+# =============================================================================
+# MCP Tools — All descriptions in English for agent consumption
+# =============================================================================
 
 
 @tool(
     "generate_cleanup",
-    "원본 사진에서 기존 가구/잡동사니를 제거한 깨끗한 공간 이미지를 생성합니다.",
+    "Remove existing furniture/clutter from original photo, producing a clean empty space image.",
     {
         "type": "object",
         "properties": {
-            "original_image_b64": {"type": "string", "description": "원본 사진 base64"},
-            "space_description": {"type": "string", "description": "공간 설명 (간략히)"},
+            "original_image_b64": {
+                "type": "string",
+                "description": "Original site photo as base64",
+            },
+            "space_description": {
+                "type": "string",
+                "description": "Brief space description (e.g. 'Korean apartment kitchen with tile backsplash')",
+            },
         },
         "required": ["original_image_b64"],
     },
 )
 async def generate_cleanup(args: dict) -> dict:
     desc = args.get("space_description", "Korean apartment kitchen")
-    prompt = f"Remove all furniture and objects. Show clean empty {desc}. Clean floor and walls only."
+    prompt = (
+        f"Remove all existing furniture, appliances and objects from this photo. "
+        f"Show only the clean empty {desc} with bare walls and floor. "
+        f"Preserve original lighting, wall color and perspective exactly."
+    )
 
     result_b64 = await _call_gemini_image(prompt, args["original_image_b64"])
     return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps({"image_base64": result_b64, "type": "cleanup"}),
-            }
-        ]
+        "content": [{
+            "type": "text",
+            "text": json.dumps({"image_base64": result_b64, "stage": "cleanup"}),
+        }]
     }
 
 
 @tool(
     "generate_furniture",
-    "Flux LoRA 모델로 해당 카테고리의 가구가 설치된 이미지를 생성합니다.",
+    "Generate furniture installation image using Flux LoRA model for the given category.",
     {
         "type": "object",
         "properties": {
-            "category": {"type": "string", "description": "가구 카테고리"},
-            "style": {"type": "string", "description": "스타일 (modern, nordic 등)"},
-            "layout_description": {"type": "string", "description": "배치 설명 (영문, 300자 이내)"},
-            "cleanup_image_b64": {"type": "string", "description": "클린업 이미지 base64"},
+            "category": {
+                "type": "string",
+                "description": "Furniture category (sink, island, closet, etc.)",
+            },
+            "style": {
+                "type": "string",
+                "description": "Design style (modern, nordic, classic, natural, industrial, luxury)",
+            },
+            "layout_description": {
+                "type": "string",
+                "description": "Compressed layout description in English (<500 chars). Include dimensions, module count, finish type.",
+            },
+            "cleanup_image_b64": {
+                "type": "string",
+                "description": "Cleanup image base64 (for reference context)",
+            },
         },
         "required": ["category", "layout_description"],
     },
 )
 async def generate_furniture(args: dict) -> dict:
     style = args.get("style", "modern")
-    prompt = f"{style} style, {args['layout_description']}, photorealistic, interior photography"
+    prompt = (
+        f"{style} style Korean built-in furniture, {args['layout_description']}, "
+        f"photorealistic interior photography, natural lighting"
+    )
 
     result_b64 = await _call_flux_lora(args["category"], prompt)
     return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps({"image_base64": result_b64, "type": "furniture"}),
-            }
-        ]
+        "content": [{
+            "type": "text",
+            "text": json.dumps({"image_base64": result_b64, "stage": "furniture"}),
+        }]
     }
 
 
 @tool(
     "generate_correction",
-    "생성된 가구 이미지의 색상, 조명, 원근을 원본 공간에 맞게 보정합니다.",
+    "Correct furniture image to match original space — fix color temperature, lighting, perspective alignment.",
     {
         "type": "object",
         "properties": {
-            "furniture_image_b64": {"type": "string", "description": "가구 이미지 base64"},
-            "correction_prompt": {"type": "string", "description": "보정 지시 (300자 이내)"},
+            "furniture_image_b64": {
+                "type": "string",
+                "description": "Generated furniture image as base64",
+            },
+            "original_image_b64": {
+                "type": "string",
+                "description": "Original site photo for color/lighting reference",
+            },
+            "correction_prompt": {
+                "type": "string",
+                "description": "Correction instructions in English (<500 chars)",
+            },
         },
         "required": ["furniture_image_b64", "correction_prompt"],
     },
 )
 async def generate_correction(args: dict) -> dict:
-    result_b64 = await _call_gemini_image(
-        args["correction_prompt"], args["furniture_image_b64"]
-    )
+    prompt = args["correction_prompt"]
+    result_b64 = await _call_gemini_image(prompt, args["furniture_image_b64"])
     return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps({"image_base64": result_b64, "type": "correction"}),
-            }
-        ]
+        "content": [{
+            "type": "text",
+            "text": json.dumps({"image_base64": result_b64, "stage": "correction"}),
+        }]
     }
 
 
 @tool(
     "generate_open",
-    "가구의 수납 내부 구성 이미지를 생성합니다 (문 열린 상태).",
+    "Generate open-door view showing interior storage configuration of the furniture.",
     {
         "type": "object",
         "properties": {
-            "furniture_image_b64": {"type": "string", "description": "가구 이미지 base64"},
-            "open_prompt": {"type": "string", "description": "내부 구성 설명 (300자 이내)"},
+            "furniture_image_b64": {
+                "type": "string",
+                "description": "Corrected furniture image as base64",
+            },
+            "category": {
+                "type": "string",
+                "description": "Furniture category (for appropriate interior contents)",
+            },
+            "open_prompt": {
+                "type": "string",
+                "description": "Open-door view instructions in English (<500 chars)",
+            },
         },
         "required": ["furniture_image_b64", "open_prompt"],
     },
@@ -205,16 +261,14 @@ async def generate_open(args: dict) -> dict:
         args["open_prompt"], args["furniture_image_b64"]
     )
     return {
-        "content": [
-            {
-                "type": "text",
-                "text": json.dumps({"image_base64": result_b64, "type": "open"}),
-            }
-        ]
+        "content": [{
+            "type": "text",
+            "text": json.dumps({"image_base64": result_b64, "stage": "open"}),
+        }]
     }
 
 
-# MCP 서버 생성
+# MCP Server
 image_server = create_sdk_mcp_server(
     name="image",
     version="1.0.0",

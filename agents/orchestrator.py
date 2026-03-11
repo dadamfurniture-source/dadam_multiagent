@@ -50,7 +50,7 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
     # 기본 에이전트 (모든 플랜)
     agents = {
         "space-analyst": AgentDefinition(
-            description="공간 사진을 분석하여 벽면, 배관, 치수 정보를 추출하는 에이전트. 사진 분석이 필요할 때 사용.",
+            description="Analyze space photos to extract wall dimensions, utilities, and measurements. Use first.",
             prompt=SPACE_ANALYST_PROMPT,
             tools=[
                 "mcp__vision__analyze_space",
@@ -59,10 +59,12 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
             model="opus",
         ),
         "design-planner": AgentDefinition(
-            description="공간 분석 결과를 기반으로 가구 모듈 배치를 계획하는 에이전트. 공간 분석 완료 후 사용.",
+            description="Plan furniture module layout based on space analysis. Use after space analysis is complete.",
             prompt=DESIGN_PLANNER_PROMPT,
             tools=[
                 "mcp__supabase__read_project",
+                "mcp__layout__plan_furniture_layout",
+                "mcp__layout__get_open_door_contents",
                 "mcp__pricing__get_modules",
                 "mcp__feedback__search_similar_cases",
                 "mcp__feedback__get_active_constraints",
@@ -70,7 +72,7 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
             model="sonnet",
         ),
         "image-generator": AgentDefinition(
-            description="배치 계획을 기반으로 시뮬레이션 이미지를 생성하는 에이전트. 배치 계획 완료 후 사용.",
+            description="Generate simulation images from layout plan. Use after design planning is complete.",
             prompt=IMAGE_GENERATOR_PROMPT,
             tools=[
                 "mcp__image__generate_cleanup",
@@ -82,7 +84,7 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
             model="sonnet",
         ),
         "quote-calculator": AgentDefinition(
-            description="배치 계획의 모듈 구성으로 견적을 산출하는 에이전트. 배치 계획 완료 후 사용.",
+            description="Calculate quote from module layout. Use after design planning is complete.",
             prompt=QUOTE_CALCULATOR_PROMPT,
             tools=[
                 "mcp__pricing__get_prices",
@@ -99,7 +101,7 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
 
     if "detail_design" in plan_features:
         agents["detail-designer"] = AgentDefinition(
-            description="상세 제작 설계도를 생성하는 에이전트 (Pro 이상). 견적 완료 후 상세 설계가 필요할 때 사용.",
+            description="Generate manufacturing-grade detail design drawings (Pro+). Use after quote is complete.",
             prompt=DETAIL_DESIGNER_PROMPT,
             tools=[
                 "mcp__supabase__read_project",
@@ -111,8 +113,8 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
 
     if "bom" in plan_features:
         agents["bom-generator"] = AgentDefinition(
-            description="자재 명세서(BOM)를 생성하는 에이전트 (Pro 이상). 상세 설계 완료 후 사용.",
-            prompt="상세 설계를 기반으로 자재 명세서를 생성합니다. 모든 부품, 수량, 규격을 정확히 산출하세요.",
+            description="Generate Bill of Materials (BOM) from detail design (Pro+). Use after detail design.",
+            prompt="Generate a complete Bill of Materials from the detail design. List every component with exact quantities, dimensions (mm), material specifications, and unit costs. Group by: panels, hardware (hinges/slides/handles), countertop, and accessories.",
             tools=[
                 "mcp__supabase__read_project",
                 "mcp__pricing__get_materials",
@@ -120,10 +122,10 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
             model="sonnet",
         )
 
-    # QA는 Pro+ 에서만 자동 실행
+    # QA runs automatically for Pro+
     if user_plan in ("pro", "enterprise"):
         agents["qa-reviewer"] = AgentDefinition(
-            description="설계 결과의 품질을 검증하는 에이전트 (Pro 이상). 모든 설계 완료 후 최종 검증에 사용.",
+            description="QA reviewer for final quality validation of all design outputs (Pro+). Use last.",
             prompt=QA_REVIEWER_PROMPT,
             tools=["mcp__supabase__read_project"],
             model="opus",
@@ -133,47 +135,57 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
 
 
 def _build_orchestrator_prompt(request: ProjectRequest) -> str:
-    """요청에 따른 오케스트레이터 프롬프트 생성"""
+    """Build orchestrator prompt for given project request"""
 
     plan_features = PLANS.get(request.user_plan, {}).get("features", [])
     has_detail = "detail_design" in plan_features
     has_bom = "bom" in plan_features
     is_pro = request.user_plan in ("pro", "enterprise")
 
+    step_num = 1
     steps = [
-        "1. space-analyst 에이전트로 업로드된 사진의 공간을 분석하세요.",
-        "2. design-planner 에이전트로 분석된 공간에 가구 배치를 계획하세요.",
-        "3. image-generator 에이전트로 시뮬레이션 이미지를 생성하세요.",
-        "4. quote-calculator 에이전트로 견적을 산출하세요.",
+        f"{step_num}. Use space-analyst to analyze the uploaded site photo. Extract wall dimensions, utility positions, and obstacles.",
     ]
+    step_num += 1
+    steps.append(f"{step_num}. Use design-planner to create furniture module layout based on space analysis. Pass wall_width, category, sink/cooktop positions.")
+    step_num += 1
+    steps.append(f"{step_num}. Use image-generator to create simulation images (cleanup → furniture → correction → open-door).")
+    step_num += 1
+    steps.append(f"{step_num}. Use quote-calculator to calculate pricing from the module layout.")
 
     if has_detail:
-        steps.append("5. detail-designer 에이전트로 상세 제작 설계도를 생성하세요.")
+        step_num += 1
+        steps.append(f"{step_num}. Use detail-designer to generate manufacturing-grade design drawings.")
     if has_bom:
-        steps.append("6. bom-generator 에이전트로 자재 명세서를 생성하세요.")
+        step_num += 1
+        steps.append(f"{step_num}. Use bom-generator to create Bill of Materials from detail design.")
     if is_pro:
-        steps.append(f"{'7' if has_bom else '6' if has_detail else '5'}. qa-reviewer 에이전트로 최종 품질 검증하세요.")
+        step_num += 1
+        steps.append(f"{step_num}. Use qa-reviewer for final quality validation of all outputs.")
 
     steps_text = "\n".join(steps)
-    style_text = f"선호 스타일: {request.style}" if request.style else "스타일: 자동 추천"
-    budget_text = f"예산: {request.budget:,}원" if request.budget else "예산: 미지정"
-    notes_text = f"추가 요청: {request.notes}" if request.notes else ""
+    style_text = f"Preferred style: {request.style}" if request.style else "Style: auto-recommend"
+    budget_text = f"Budget: {request.budget:,} KRW" if request.budget else "Budget: not specified"
+    notes_text = f"Additional notes: {request.notes}" if request.notes else ""
 
-    return f"""고객의 주문제작 가구 시뮬레이션 요청을 처리하세요.
+    return f"""Process a custom furniture simulation request.
 
-## 프로젝트 정보
-- 프로젝트 ID: {request.project_id}
-- 품목: {request.category}
+## Project Information
+- Project ID: {request.project_id}
+- Category: {request.category}
 - {style_text}
 - {budget_text}
-- 사진 URL: {request.image_url}
+- Photo URL: {request.image_url}
 {notes_text}
 
-## 처리 순서
+## Processing Pipeline
 {steps_text}
 
-각 에이전트의 결과를 다음 에이전트에 전달하고, 최종 결과를 JSON으로 통합하여 반환하세요.
-에이전트 호출 시 이전 단계의 결과를 명확히 전달하세요.
+IMPORTANT:
+- Pass each agent's output as input to the next agent in the chain.
+- All prompts for image generation must be in English and under 500 characters.
+- The layout plan must use the layout engine (plan_furniture_layout tool) for precise module distribution.
+- Return the final consolidated result as JSON with keys: space_analysis, layout, images, quote.
 """
 
 
