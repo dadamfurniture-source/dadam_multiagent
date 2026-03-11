@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>프로젝트 결과 - 다담 AI</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">다담 AI</a>
+      <nav class="nav">
+        <a href="/new.html">새 프로젝트</a>
+        <a href="/projects.html">내 프로젝트</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="padding:40px 0">
+    <div class="container">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h1>시뮬레이션 결과</h1>
+        <span class="badge badge-processing" id="project-status">처리 중</span>
+      </div>
+
+      <!-- Pipeline Progress -->
+      <div class="card" style="margin-bottom:24px">
+        <h3 style="margin-bottom:12px">진행 상황</h3>
+        <div class="pipeline-steps" id="pipeline-steps"></div>
+        <div id="progress-log" style="max-height:150px;overflow-y:auto;margin-top:12px;padding:8px;background:var(--bg);border-radius:6px;display:none"></div>
+      </div>
+
+      <!-- Error -->
+      <div id="error-message" style="display:none;padding:16px;background:#fee2e2;color:#991b1b;border-radius:8px;margin-bottom:24px"></div>
+
+      <!-- Result Images -->
+      <div class="card" style="margin-bottom:24px">
+        <h3 style="margin-bottom:16px">시뮬레이션 이미지</h3>
+        <div class="result-images" id="result-images">
+          <p style="color:var(--text-secondary);text-align:center;padding:48px">AI가 이미지를 생성 중입니다...</p>
+        </div>
+      </div>
+
+      <!-- Layout -->
+      <div id="layout-section" class="card" style="margin-bottom:24px;display:none"></div>
+
+      <!-- Quote -->
+      <div id="quote-section" class="card" style="margin-bottom:24px;display:none"></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:12px;justify-content:center;margin-top:32px">
+        <a href="/new.html" class="btn btn-outline">새 시뮬레이션</a>
+        <button class="btn btn-primary" onclick="window.print()">결과 인쇄</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

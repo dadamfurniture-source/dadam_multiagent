@@ -1,12 +1,17 @@
 """다담 SaaS FastAPI 서버"""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.routes import accounting, feedback, orders, projects
 from shared.config import settings
+
+STATIC_DIR = Path(__file__).parent.parent / "static"
 
 
 @asynccontextmanager
@@ -41,3 +46,20 @@ app.include_router(feedback.router, prefix="/api/v1")
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "dadam-saas", "version": "0.1.0"}
+
+
+# Static files & HTML pages
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+async def index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/{page}.html")
+async def serve_page(page: str):
+    file_path = STATIC_DIR / f"{page}.html"
+    if file_path.exists():
+        return FileResponse(file_path)
+    return FileResponse(STATIC_DIR / "index.html")
