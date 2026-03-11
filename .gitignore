@@ -8,3 +8,5 @@ dist/
 node_modules/
 .next/
 .vercel/
+.auto-save.pid
+.auto-save.log
