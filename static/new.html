@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>새 프로젝트 - 다담 AI</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">다담 AI</a>
+      <nav class="nav">
+        <a href="/new.html" style="color:var(--primary);font-weight:600">새 프로젝트</a>
+        <a href="/projects.html">내 프로젝트</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="padding:40px 0">
+    <div class="container" style="max-width:720px">
+      <h1 style="margin-bottom:32px">새 시뮬레이션</h1>
+
+      <form id="project-form">
+        <!-- Step 1: Photo Upload -->
+        <div class="card" style="margin-bottom:20px">
+          <h3 style="margin-bottom:16px">1. 공간 사진</h3>
+          <div class="upload-zone" id="upload-zone">
+            <input type="file" id="file-input" accept="image/*">
+            <div class="upload-icon">&#128247;</div>
+            <div class="upload-text">
+              <strong>클릭</strong> 또는 드래그하여 사진 업로드<br>
+              <span style="font-size:12px">JPG, PNG, WebP (최대 10MB)</span>
+            </div>
+            <img id="upload-preview" style="display:none;max-width:100%;max-height:300px;border-radius:8px;margin-top:12px" alt="preview">
+          </div>
+        </div>
+
+        <!-- Step 2: Category -->
+        <div class="card" style="margin-bottom:20px">
+          <h3 style="margin-bottom:16px">2. 가구 카테고리</h3>
+          <div class="category-grid" id="category-grid"></div>
+        </div>
+
+        <!-- Step 3: Style -->
+        <div class="card" style="margin-bottom:20px">
+          <h3 style="margin-bottom:16px">3. 스타일 (선택)</h3>
+          <div class="style-grid" id="style-grid"></div>
+        </div>
+
+        <!-- Step 4: Options -->
+        <div class="card" style="margin-bottom:20px">
+          <h3 style="margin-bottom:16px">4. 추가 정보 (선택)</h3>
+          <div class="form-group">
+            <label class="form-label" for="budget">예산 (원)</label>
+            <input class="form-input" type="number" id="budget" placeholder="예: 2000000" step="100000">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label" for="notes">요청사항</label>
+            <textarea class="form-textarea" id="notes" rows="3" placeholder="예: 수납 공간 최대화, 화이트 톤 선호"></textarea>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%">시뮬레이션 시작</button>
+      </form>
+    </div>
+  </main>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
