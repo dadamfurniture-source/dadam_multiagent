@@ -118,6 +118,7 @@ def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
             tools=[
                 "mcp__supabase__read_project",
                 "mcp__pricing__get_materials",
+                "mcp__drawing__generate_bom_drawing",
             ],
             model="sonnet",
         )

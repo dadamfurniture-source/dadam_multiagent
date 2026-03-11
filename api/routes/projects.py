@@ -175,35 +175,113 @@ async def get_project(
     return APIResponse(data=data)
 
 
-@router.get("/{project_id}/stream")
-async def stream_project(project_id: str):
-    """프로젝트 처리 SSE 스트림 (실시간 진행 상황)"""
-    from fastapi.responses import StreamingResponse
-
-    from agents.orchestrator import ProjectRequest, process_project
-
-    # TODO: 실제로는 프로젝트 + 사용자 정보를 DB에서 조회
+@router.post("/{project_id}/run", response_model=APIResponse)
+async def run_project(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """AI 파이프라인 실행 시작 — 프로젝트 상태를 'processing'으로 변경하고 SSE 스트림 URL 반환"""
     client = get_service_client()
-    project = client.table("projects").select("*").eq("id", project_id).single().execute()
+
+    project = (
+        client.table("projects")
+        .select("*")
+        .eq("id", project_id)
+        .eq("user_id", user.id)
+        .single()
+        .execute()
+    )
 
     if not project.data:
         raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
 
+    if project.data["status"] not in ("created", "failed"):
+        raise HTTPException(400, f"현재 상태({project.data['status']})에서는 실행할 수 없습니다.")
+
+    # 상태 업데이트
+    client.table("projects").update({"status": "processing"}).eq("id", project_id).execute()
+
+    return APIResponse(
+        message="AI 파이프라인이 시작되었습니다.",
+        data={
+            "project_id": project_id,
+            "status": "processing",
+            "stream_url": f"/api/v1/projects/{project_id}/stream",
+        },
+    )
+
+
+@router.get("/{project_id}/stream")
+async def stream_project(
+    project_id: str,
+):
+    """프로젝트 처리 SSE 스트림 — 실시간 진행 상황 전달"""
+    import json as json_mod
+
+    from fastapi.responses import StreamingResponse
+
+    from agents.orchestrator import ProjectRequest, process_project
+
+    client = get_service_client()
+
+    # 프로젝트 조회
+    project = client.table("projects").select("*").eq("id", project_id).single().execute()
+    if not project.data:
+        raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
+
     p = project.data
+
+    # 원본 이미지 URL 조회
+    original_img = (
+        client.table("generated_images")
+        .select("image_url")
+        .eq("project_id", project_id)
+        .eq("type", "original")
+        .limit(1)
+        .execute()
+    )
+    image_url = original_img.data[0]["image_url"] if original_img.data else ""
+
+    # 사용자 프로필에서 플랜 조회
+    profile = (
+        client.table("profiles")
+        .select("plan")
+        .eq("id", p["user_id"])
+        .single()
+        .execute()
+    )
+    user_plan = profile.data.get("plan", "free") if profile.data else "free"
+
     request = ProjectRequest(
         project_id=project_id,
         user_id=p["user_id"],
-        user_plan="basic",  # TODO: 프로필에서 조회
+        user_plan=user_plan,
         category=p["category"],
         style=p.get("style"),
         budget=p.get("budget"),
-        image_url="",  # TODO: 원본 이미지 URL 조회
+        image_url=image_url,
         notes=p.get("notes"),
     )
 
     async def event_generator():
-        import json
-        async for event in process_project(request):
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        try:
+            async for event in process_project(request):
+                yield f"data: {json_mod.dumps(event, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+            # 완료 시 프로젝트 상태 업데이트
+            client.table("projects").update({"status": "completed"}).eq("id", project_id).execute()
+            yield f"data: {json_mod.dumps({'type': 'status', 'stage': 'completed'})}\n\n"
+
+        except Exception as e:
+            client.table("projects").update({"status": "failed"}).eq("id", project_id).execute()
+            yield f"data: {json_mod.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
