@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+dist/
+*.egg-info/
+node_modules/
+.next/
+.vercel/
