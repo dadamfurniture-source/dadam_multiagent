@@ -1,7 +1,10 @@
 """B2B 내보내기 API — Pro+ 상세설계/BOM/견적서 다운로드"""
 
+import csv
+import io
 import json as json_mod
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -9,6 +12,11 @@ from fastapi.responses import Response
 from api.middleware.auth import PLAN_ORDER, CurrentUser, get_current_user, require_pro
 from api.schemas.common import APIResponse
 from shared.supabase_client import get_service_client
+
+
+def _safe_filename(name: str) -> str:
+    """파일명에 안전한 문자만 허용"""
+    return re.sub(r'[^\w\-.]', '_', name)[:100]
 
 router = APIRouter(prefix="/exports", tags=["Exports (B2B)"])
 
@@ -81,7 +89,7 @@ async def export_drawing_svg(
 
     svg = _generate_front_elevation(layout_json)
 
-    project_name = data["project"]["name"].replace(" ", "_")
+    project_name = _safe_filename(data["project"]["name"])
     filename = f"dadam_{project_name}_{drawing_type}.svg"
 
     return Response(
@@ -170,7 +178,7 @@ async def export_bom_json(
         "project_id": project_id,
         "project_name": data["project"]["name"],
         "category": data["project"]["category"],
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "module_count": len(bom_items),
         "total_parts": total_parts,
         "modules": bom_items,
@@ -195,13 +203,15 @@ async def export_bom_csv(
     layout_json = _get_layout_json(data)
     bom_items = _build_bom(layout_json)
 
-    lines = ["Module,Type,Width(mm),Part,Size,Qty"]
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+    writer.writerow(["Module", "Type", "Width(mm)", "Part", "Size", "Qty"])
     for m in bom_items:
         for p in m["parts"]:
-            lines.append(f"{m['module_index']},{m['type']},{m['width_mm']},{p['name']},{p['size']},{p['qty']}")
+            writer.writerow([m["module_index"], m["type"], m["width_mm"], p["name"], p["size"], p["qty"]])
 
-    csv_content = "\n".join(lines)
-    project_name = data["project"]["name"].replace(" ", "_")
+    csv_content = output.getvalue()
+    project_name = _safe_filename(data["project"]["name"])
 
     return Response(
         content=csv_content,
@@ -283,7 +293,7 @@ th {{ background: #f8fafc; text-align: left; }}
         <p style="color:#64748b">다담 AI - 주문제작 가구 시뮬레이션</p>
     </div>
     <div class="stamp">
-        <p>견적일: {datetime.now().strftime('%Y-%m-%d')}</p>
+        <p>견적일: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}</p>
         <p>프로젝트: {project.get('name', '-')}</p>
         <p>카테고리: {project.get('category', '-')}</p>
     </div>
@@ -316,7 +326,7 @@ th {{ background: #f8fafc; text-align: left; }}
 </body>
 </html>"""
 
-    project_name = project.get("name", "quote").replace(" ", "_")
+    project_name = _safe_filename(project.get("name", "quote"))
     return Response(
         content=html,
         media_type="text/html",

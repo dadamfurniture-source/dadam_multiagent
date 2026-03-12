@@ -9,14 +9,14 @@ Analyzes customer-uploaded photos to extract:
 
 import base64
 import json
-import os
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from agents.prompts import SPACE_ANALYST_PROMPT
+from shared.config import settings
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = settings.anthropic_api_key
 VISION_MODEL = "claude-sonnet-4-20250514"
 
 

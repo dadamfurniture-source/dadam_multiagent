@@ -7,15 +7,15 @@ Prompts must be kept under 500 chars for Gemini reliability.
 import asyncio
 import base64
 import json
-import os
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
+from shared.config import settings
 from shared.constants import LORA_MODELS
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
+GOOGLE_API_KEY = settings.google_api_key
+REPLICATE_API_TOKEN = settings.replicate_api_token
 
 # Production-verified Gemini model for image generation
 GEMINI_MODEL = "gemini-2.5-flash-image"

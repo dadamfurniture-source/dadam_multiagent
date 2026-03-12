@@ -13,22 +13,22 @@ Cron Schedule (권장):
 import asyncio
 import json
 import logging
-import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from shared.config import settings
 from shared.supabase_client import get_service_client
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "")
+OPENAI_API_KEY = settings.openai_api_key
+REPLICATE_API_TOKEN = settings.replicate_api_token
 
 
 async def _get_embedding(text: str) -> list[float] | None:
@@ -135,7 +135,7 @@ async def calibrate_prices():
         )
 
         history_entry = {
-            "date": datetime.utcnow().isoformat(),
+            "date": datetime.now(timezone.utc).isoformat(),
             "factor": correction,
             "samples": len(errors),
             "avg_error": round(avg_error, 2),
@@ -151,7 +151,7 @@ async def calibrate_prices():
                 "sample_count": len(errors),
                 "avg_error_rate": round(avg_error, 4),
                 "std_error_rate": round(std_error, 4),
-                "last_calibrated_at": datetime.utcnow().isoformat(),
+                "last_calibrated_at": datetime.now(timezone.utc).isoformat(),
                 "calibration_history": old_history,
             }).eq("id", existing.data[0]["id"]).execute()
         else:
@@ -331,7 +331,7 @@ async def cleanup_old_training():
     Trigger: 매월 1일
     """
     client = get_service_client()
-    cutoff = (datetime.utcnow() - timedelta(days=180)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
 
     # trained 상태 이미지 → 참조만 유지, URL은 비움 (storage 정리)
     trained = (

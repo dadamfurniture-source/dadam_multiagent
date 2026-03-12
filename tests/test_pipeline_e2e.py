@@ -423,6 +423,11 @@ def test_exports_route():
     assert "edge_banding" in source, "Missing edge banding calculation"
     print("  BOM material specs (deduplicated) OK")
 
+    # Verify CSV injection prevention
+    assert "csv.writer" in source or "csv.QUOTE_ALL" in source, "Missing CSV injection prevention (should use csv module)"
+    assert "_safe_filename" in source, "Missing filename sanitization"
+    print("  CSV injection prevention + filename sanitization OK")
+
 
 def test_payments_route():
     """Test Stripe payments route structure"""

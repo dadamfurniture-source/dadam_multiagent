@@ -1,7 +1,7 @@
 """관리자 API — 피드백 루프 관리 + 제약조건 승인 + 수동 트리거"""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -87,9 +87,9 @@ async def update_constraint(
     update_data = {"status": rule["to"]}
     if body.action == "approve":
         update_data["approved_by"] = user.id
-        update_data["approved_at"] = datetime.utcnow().isoformat()
+        update_data["approved_at"] = datetime.now(timezone.utc).isoformat()
     elif body.action == "apply":
-        update_data["applied_at"] = datetime.utcnow().isoformat()
+        update_data["applied_at"] = datetime.now(timezone.utc).isoformat()
     elif body.action == "reject":
         update_data["rejected_reason"] = body.reason
 
@@ -155,7 +155,7 @@ async def activate_lora_model(
     # 새 모델 활성화
     client.table("lora_model_versions").update({
         "is_active": True,
-        "activated_at": datetime.utcnow().isoformat(),
+        "activated_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", model_id).execute()
 
     return APIResponse(
