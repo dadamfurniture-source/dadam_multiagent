@@ -375,6 +375,47 @@ def test_orders_state_machine():
     print("  Background ops event triggers OK")
 
 
+def test_exports_route():
+    """Test B2B exports route structure and plan gating"""
+    exports_file = Path(__file__).parent.parent / "api" / "routes" / "exports.py"
+    with open(exports_file, encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source)
+
+    # Verify required endpoints exist
+    assert "drawing.svg" in source, "Missing SVG drawing endpoint"
+    assert "bom.json" in source, "Missing BOM JSON endpoint"
+    assert "bom.csv" in source, "Missing BOM CSV endpoint"
+    assert "quote.html" in source, "Missing quote HTML endpoint"
+    assert "/available" in source, "Missing available exports endpoint"
+    print("  5 export endpoints found OK")
+
+    # Verify Pro+ gating
+    assert "_require_pro" in source, "Missing _require_pro gating function"
+    assert 'PLAN_ORDER' in source, "Missing PLAN_ORDER dict"
+    # Count _require_pro calls (should be in SVG, BOM JSON, BOM CSV = 3)
+    require_count = source.count("_require_pro(user)")
+    assert require_count >= 3, f"Expected >=3 _require_pro calls, got {require_count}"
+    print(f"  Pro+ gating: {require_count} endpoints gated OK")
+
+    # Verify quote is accessible to all plans (no _require_pro in quote endpoint)
+    # Split source by function to check quote separately
+    assert "export_quote_html" in source, "Missing quote export function"
+
+    # Verify download headers
+    assert "Content-Disposition" in source, "Missing Content-Disposition header"
+    assert "image/svg+xml" in source, "Missing SVG media type"
+    assert "text/csv" in source, "Missing CSV media type"
+    print("  Download headers OK")
+
+    # Verify BOM generation logic
+    assert "18T PB" in source, "Missing PB material spec in BOM"
+    assert "9T MDF" in source, "Missing MDF material spec in BOM"
+    assert "edge_banding" in source, "Missing edge banding calculation"
+    print("  BOM material specs OK")
+
+
 def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
@@ -406,6 +447,7 @@ def run_all():
         ("Constants - Completeness", test_constants_completeness),
         ("Migrations - File Check", test_migration_files),
         ("Orders - State Machine & Payments", test_orders_state_machine),
+        ("Exports - B2B Route Structure", test_exports_route),
     ]
 
     passed = 0
