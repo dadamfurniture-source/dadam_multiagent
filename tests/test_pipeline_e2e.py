@@ -703,6 +703,30 @@ def test_production_readiness():
         "CORS should use explicit methods, not wildcard"
     print("  CORS explicit methods OK")
 
+    # Frontend pages
+    static_dir = Path(__file__).parent.parent / "static"
+    required_pages = ["index.html", "new.html", "projects.html", "project.html", "orders.html", "pricing.html", "admin.html", "enterprise.html"]
+    for page in required_pages:
+        assert (static_dir / page).exists(), f"Missing page: {page}"
+    print(f"  {len(required_pages)} frontend pages OK")
+
+    # Admin page has required sections
+    admin_html = (static_dir / "admin.html").read_text(encoding="utf-8")
+    assert "constraints" in admin_html, "Admin missing constraints section"
+    assert "lora" in admin_html, "Admin missing LoRA section"
+    assert "training" in admin_html, "Admin missing training queue"
+    assert "calibrations" in admin_html, "Admin missing calibrations"
+    assert "trigger" in admin_html, "Admin missing manual trigger"
+    print("  Admin dashboard sections OK")
+
+    # Enterprise page has required sections
+    ent_html = (static_dir / "enterprise.html").read_text(encoding="utf-8")
+    assert "api-keys" in ent_html, "Enterprise missing API keys section"
+    assert "brand" in ent_html, "Enterprise missing brand settings"
+    assert "usage" in ent_html, "Enterprise missing usage section"
+    assert "dxf" in ent_html.lower(), "Enterprise missing DXF export"
+    print("  Enterprise settings sections OK")
+
     # CI/CD pipeline
     ci_file = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
     assert ci_file.exists(), "Missing CI/CD pipeline"

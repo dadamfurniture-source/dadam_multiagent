@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - 다담 AI</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 200px 1fr; gap: 24px; min-height: calc(100vh - 120px); }
+    .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; }
+    .sidebar-item { display: block; padding: 10px 20px; font-size: 14px; color: var(--text-secondary); cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+    .sidebar-item:hover { background: var(--bg); color: var(--text); }
+    .sidebar-item.active { color: var(--primary); background: #eff6ff; font-weight: 600; border-right: 3px solid var(--primary); }
+    .admin-content { padding: 24px; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .stat-value { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+    .stat-label { font-size: 13px; color: var(--text-secondary); }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+    .data-table th { background: var(--bg); font-weight: 600; font-size: 12px; text-transform: uppercase; color: var(--text-secondary); text-align: left; padding: 10px 14px; }
+    .data-table td { padding: 10px 14px; border-top: 1px solid var(--border); }
+    .data-table tr:hover td { background: #f8fafc; }
+    .constraint-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .constraint-badge.proposed { background: #fef3c7; color: #92400e; }
+    .constraint-badge.approved { background: #dbeafe; color: #1e40af; }
+    .constraint-badge.applied { background: #d1fae5; color: #065f46; }
+    .constraint-badge.rejected { background: #fee2e2; color: #991b1b; }
+    .action-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; font-size: 12px; }
+    .action-btn:hover { background: var(--bg); }
+    .action-btn.approve { border-color: var(--success); color: var(--success); }
+    .action-btn.reject { border-color: var(--error); color: var(--error); }
+    .section-panel { display: none; }
+    .section-panel.active { display: block; }
+    .trigger-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .trigger-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+    .trigger-card h4 { font-size: 14px; margin-bottom: 4px; }
+    .trigger-card p { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; }
+    .calibration-bar { display: flex; align-items: center; gap: 8px; }
+    .calibration-fill { height: 8px; border-radius: 4px; transition: width 0.3s; }
+    @media (max-width: 768px) { .admin-grid { grid-template-columns: 1fr; } .sidebar { border-right: none; border-bottom: 1px solid var(--border); display: flex; overflow-x: auto; padding: 0; } .sidebar-item { white-space: nowrap; border-right: none !important; } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">다담 AI</a>
+      <nav class="nav">
+        <a href="/projects.html">내 프로젝트</a>
+        <a href="/orders.html">주문 관리</a>
+        <a href="/admin.html" style="color:var(--primary);font-weight:600">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="admin-grid">
+    <aside class="sidebar">
+      <button class="sidebar-item active" data-section="dashboard">대시보드</button>
+      <button class="sidebar-item" data-section="constraints">제약조건 관리</button>
+      <button class="sidebar-item" data-section="lora">LoRA 모델</button>
+      <button class="sidebar-item" data-section="training">학습 대기열</button>
+      <button class="sidebar-item" data-section="calibrations">가격 보정</button>
+      <button class="sidebar-item" data-section="triggers">수동 트리거</button>
+    </aside>
+
+    <div class="admin-content">
+      <!-- Dashboard -->
+      <div id="section-dashboard" class="section-panel active">
+        <h2 style="margin-bottom:20px">Admin 대시보드</h2>
+        <div class="stat-grid" id="dashboard-stats">
+          <div class="stat-card"><div class="stat-value" id="stat-constraints">-</div><div class="stat-label">제안된 제약조건</div></div>
+          <div class="stat-card"><div class="stat-value" id="stat-training">-</div><div class="stat-label">학습 대기 이미지</div></div>
+          <div class="stat-card"><div class="stat-value" id="stat-models">-</div><div class="stat-label">LoRA 모델</div></div>
+          <div class="stat-card"><div class="stat-value" id="stat-calibrations">-</div><div class="stat-label">보정된 카테고리</div></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:12px">최근 활동</h3>
+          <div id="recent-activity" style="font-size:14px;color:var(--text-secondary)">로딩 중...</div>
+        </div>
+      </div>
+
+      <!-- Constraints -->
+      <div id="section-constraints" class="section-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h2>학습된 제약조건</h2>
+          <div style="display:flex;gap:8px">
+            <select id="constraint-filter" class="form-select" style="width:auto;padding:6px 12px;font-size:13px">
+              <option value="">전체 상태</option>
+              <option value="proposed">제안됨</option>
+              <option value="approved">승인됨</option>
+              <option value="applied">적용됨</option>
+              <option value="rejected">거부됨</option>
+            </select>
+          </div>
+        </div>
+        <div id="constraints-table">
+          <p style="text-align:center;color:var(--text-secondary);padding:40px">로딩 중...</p>
+        </div>
+      </div>
+
+      <!-- LoRA Models -->
+      <div id="section-lora" class="section-panel">
+        <h2 style="margin-bottom:20px">LoRA 모델 관리</h2>
+        <div id="lora-table">
+          <p style="text-align:center;color:var(--text-secondary);padding:40px">로딩 중...</p>
+        </div>
+      </div>
+
+      <!-- Training Queue -->
+      <div id="section-training" class="section-panel">
+        <h2 style="margin-bottom:20px">학습 대기열</h2>
+        <div id="training-stats" class="stat-grid" style="margin-bottom:20px"></div>
+        <div id="training-table">
+          <p style="text-align:center;color:var(--text-secondary);padding:40px">로딩 중...</p>
+        </div>
+      </div>
+
+      <!-- Calibrations -->
+      <div id="section-calibrations" class="section-panel">
+        <h2 style="margin-bottom:20px">가격 보정 현황</h2>
+        <div id="calibrations-table">
+          <p style="text-align:center;color:var(--text-secondary);padding:40px">로딩 중...</p>
+        </div>
+      </div>
+
+      <!-- Manual Triggers -->
+      <div id="section-triggers" class="section-panel">
+        <h2 style="margin-bottom:20px">수동 트리거</h2>
+        <p style="color:var(--text-secondary);margin-bottom:20px">피드백 루프 태스크를 수동으로 실행합니다.</p>
+        <div class="trigger-grid">
+          <div class="trigger-card">
+            <h4>사례 등록 + 임베딩</h4>
+            <p>완료된 프로젝트를 RAG DB에 등록하고 벡터 임베딩을 생성합니다.</p>
+            <button class="btn btn-outline btn-sm" onclick="triggerTask('embed')">실행</button>
+          </div>
+          <div class="trigger-card">
+            <h4>가격 보정</h4>
+            <p>견적 정확도 데이터를 분석하여 보정 계수를 재계산합니다.</p>
+            <button class="btn btn-outline btn-sm" onclick="triggerTask('calibrate')">실행</button>
+          </div>
+          <div class="trigger-card">
+            <h4>A/S 패턴 분석</h4>
+            <p>반복 발생 A/S 패턴을 감지하고 제약조건을 자동 제안합니다.</p>
+            <button class="btn btn-outline btn-sm" onclick="triggerTask('as_patterns')">실행</button>
+          </div>
+          <div class="trigger-card">
+            <h4>LoRA 학습 트리거</h4>
+            <p>대기열 50장 이상인 카테고리의 LoRA 재학습을 시작합니다.</p>
+            <button class="btn btn-outline btn-sm" onclick="triggerTask('lora_trigger')">실행</button>
+          </div>
+          <div class="trigger-card">
+            <h4>사례 자동 등록</h4>
+            <p>완료된 프로젝트 중 미등록 사례를 자동으로 등록합니다.</p>
+            <button class="btn btn-outline btn-sm" onclick="triggerTask('register_cases')">실행</button>
+          </div>
+        </div>
+        <div id="trigger-result" style="margin-top:16px;display:none" class="card"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api/v1';
+    const authToken = localStorage.getItem('dadam_token') || '';
+    function apiHeaders() { return { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' }; }
+
+    // Sidebar navigation
+    document.querySelectorAll('.sidebar-item').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`section-${btn.dataset.section}`).classList.add('active');
+        loadSection(btn.dataset.section);
+      };
+    });
+
+    // Load section data
+    async function loadSection(section) {
+      try {
+        switch (section) {
+          case 'dashboard': await loadDashboard(); break;
+          case 'constraints': await loadConstraints(); break;
+          case 'lora': await loadLoraModels(); break;
+          case 'training': await loadTrainingQueue(); break;
+          case 'calibrations': await loadCalibrations(); break;
+        }
+      } catch (err) { console.error(`Failed to load ${section}:`, err); }
+    }
+
+    // Dashboard
+    async function loadDashboard() {
+      const [constraints, training, models, calibrations] = await Promise.allSettled([
+        fetch(`${API_BASE}/admin/constraints?status=proposed`, { headers: apiHeaders() }).then(r => r.json()),
+        fetch(`${API_BASE}/admin/training-queue`, { headers: apiHeaders() }).then(r => r.json()),
+        fetch(`${API_BASE}/admin/lora-models`, { headers: apiHeaders() }).then(r => r.json()),
+        fetch(`${API_BASE}/admin/calibrations`, { headers: apiHeaders() }).then(r => r.json()),
+      ]);
+
+      if (constraints.status === 'fulfilled') document.getElementById('stat-constraints').textContent = constraints.value.data?.items?.length || 0;
+      if (training.status === 'fulfilled') document.getElementById('stat-training').textContent = training.value.data?.total || 0;
+      if (models.status === 'fulfilled') document.getElementById('stat-models').textContent = models.value.data?.models?.length || 0;
+      if (calibrations.status === 'fulfilled') document.getElementById('stat-calibrations').textContent = calibrations.value.data?.calibrations?.length || 0;
+
+      document.getElementById('recent-activity').innerHTML = '<p style="color:var(--text-secondary)">대시보드 데이터가 로드되었습니다.</p>';
+    }
+
+    // Constraints
+    async function loadConstraints() {
+      const filter = document.getElementById('constraint-filter').value;
+      const url = filter ? `${API_BASE}/admin/constraints?status=${filter}` : `${API_BASE}/admin/constraints`;
+      const resp = await fetch(url, { headers: apiHeaders() });
+      const data = await resp.json();
+      const items = data.data?.items || [];
+
+      if (!items.length) {
+        document.getElementById('constraints-table').innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:40px">제약조건이 없습니다.</p>';
+        return;
+      }
+
+      let html = `<table class="data-table"><thead><tr><th>카테고리</th><th>규칙</th><th>심각도</th><th>신뢰도</th><th>상태</th><th>액션</th></tr></thead><tbody>`;
+      items.forEach(c => {
+        const actions = [];
+        if (c.status === 'proposed') {
+          actions.push(`<button class="action-btn approve" onclick="constraintAction('${c.id}','approve')">승인</button>`);
+          actions.push(`<button class="action-btn reject" onclick="constraintAction('${c.id}','reject')">거부</button>`);
+        } else if (c.status === 'approved') {
+          actions.push(`<button class="action-btn" onclick="constraintAction('${c.id}','apply')">적용</button>`);
+        }
+        html += `<tr>
+          <td>${c.category || '-'}</td>
+          <td style="max-width:300px;font-size:13px">${c.rule_text || '-'}</td>
+          <td><span class="constraint-badge ${c.severity === 'error' ? 'rejected' : 'proposed'}">${c.severity || '-'}</span></td>
+          <td>${c.confidence ? (c.confidence * 100).toFixed(0) + '%' : '-'}</td>
+          <td><span class="constraint-badge ${c.status}">${c.status}</span></td>
+          <td style="white-space:nowrap">${actions.join(' ')}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('constraints-table').innerHTML = html;
+    }
+
+    document.getElementById('constraint-filter').onchange = () => loadConstraints();
+
+    async function constraintAction(id, action) {
+      const reason = action === 'reject' ? prompt('거부 사유:') : null;
+      if (action === 'reject' && reason === null) return;
+      try {
+        const resp = await fetch(`${API_BASE}/admin/constraints/${id}`, {
+          method: 'PUT', headers: apiHeaders(),
+          body: JSON.stringify({ action, reason }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.message);
+        await loadConstraints();
+      } catch (err) { alert(`오류: ${err.message}`); }
+    }
+
+    // LoRA Models
+    async function loadLoraModels() {
+      const resp = await fetch(`${API_BASE}/admin/lora-models`, { headers: apiHeaders() });
+      const data = await resp.json();
+      const models = data.data?.models || [];
+
+      if (!models.length) {
+        document.getElementById('lora-table').innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:40px">등록된 모델이 없습니다.</p>';
+        return;
+      }
+
+      let html = `<table class="data-table"><thead><tr><th>카테고리</th><th>버전</th><th>모델 ID</th><th>트리거 워드</th><th>학습 이미지</th><th>상태</th><th>액션</th></tr></thead><tbody>`;
+      models.forEach(m => {
+        const isActive = m.is_active;
+        html += `<tr>
+          <td>${m.category}</td>
+          <td>v${m.version}</td>
+          <td style="font-size:12px;font-family:monospace">${m.replicate_model_id || '-'}</td>
+          <td><code style="font-size:12px;background:var(--bg);padding:2px 6px;border-radius:4px">${m.trigger_word || '-'}</code></td>
+          <td>${m.training_images_count || '-'}</td>
+          <td>${isActive ? '<span class="constraint-badge applied">Active</span>' : '<span style="color:var(--text-secondary);font-size:12px">Inactive</span>'}</td>
+          <td>${!isActive ? `<button class="action-btn approve" onclick="activateModel('${m.id}')">활성화</button>` : ''}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('lora-table').innerHTML = html;
+    }
+
+    async function activateModel(id) {
+      if (!confirm('이 모델을 활성화하시겠습니까? 같은 카테고리의 기존 모델은 비활성화됩니다.')) return;
+      try {
+        const resp = await fetch(`${API_BASE}/admin/lora-models/${id}/activate`, { method: 'POST', headers: apiHeaders() });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.message);
+        await loadLoraModels();
+      } catch (err) { alert(`오류: ${err.message}`); }
+    }
+
+    // Training Queue
+    async function loadTrainingQueue() {
+      const resp = await fetch(`${API_BASE}/admin/training-queue`, { headers: apiHeaders() });
+      const data = await resp.json();
+      const result = data.data || {};
+
+      // Category stats
+      const cats = result.by_category || {};
+      let statsHtml = '';
+      Object.entries(cats).forEach(([cat, count]) => {
+        const pct = Math.min(100, (count / result.trigger_threshold) * 100);
+        const color = pct >= 100 ? 'var(--success)' : pct >= 60 ? 'var(--warning)' : 'var(--primary)';
+        statsHtml += `<div class="stat-card">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:600">${cat}</span><span style="font-size:13px;color:var(--text-secondary)">${count}/${result.trigger_threshold}</span></div>
+          <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${color};border-radius:4px"></div></div>
+        </div>`;
+      });
+      document.getElementById('training-stats').innerHTML = statsHtml || '<p style="color:var(--text-secondary)">대기열이 비어있습니다.</p>';
+
+      const items = result.items || [];
+      if (!items.length) {
+        document.getElementById('training-table').innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:40px">대기 중인 이미지가 없습니다.</p>';
+        return;
+      }
+      let html = `<table class="data-table"><thead><tr><th>ID</th><th>카테고리</th><th>상태</th><th>품질</th><th>등록일</th></tr></thead><tbody>`;
+      items.slice(0, 20).forEach(item => {
+        html += `<tr><td style="font-size:12px;font-family:monospace">${(item.id || '').slice(0, 8)}</td><td>${item.category}</td><td><span class="constraint-badge ${item.status === 'pending' ? 'proposed' : 'applied'}">${item.status}</span></td><td>${item.quality_grade || '-'}</td><td>${item.created_at ? new Date(item.created_at).toLocaleDateString('ko-KR') : '-'}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      if (items.length > 20) html += `<p style="text-align:center;color:var(--text-secondary);margin-top:12px;font-size:13px">... 외 ${items.length - 20}건</p>`;
+      document.getElementById('training-table').innerHTML = html;
+    }
+
+    // Calibrations
+    async function loadCalibrations() {
+      const resp = await fetch(`${API_BASE}/admin/calibrations`, { headers: apiHeaders() });
+      const data = await resp.json();
+      const calibrations = data.data?.calibrations || [];
+
+      if (!calibrations.length) {
+        document.getElementById('calibrations-table').innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:40px">보정 데이터가 없습니다.</p>';
+        return;
+      }
+
+      let html = `<table class="data-table"><thead><tr><th>카테고리</th><th>보정 계수</th><th>평균 오차</th><th>표준편차</th><th>샘플 수</th><th>마지막 보정</th></tr></thead><tbody>`;
+      calibrations.forEach(c => {
+        const factor = c.correction_factor || 1;
+        const deviation = Math.abs(factor - 1) * 100;
+        const color = deviation < 5 ? 'var(--success)' : deviation < 15 ? 'var(--warning)' : 'var(--error)';
+        html += `<tr>
+          <td>${c.category}</td>
+          <td><span style="color:${color};font-weight:600">${factor}</span></td>
+          <td>${c.avg_error_rate != null ? c.avg_error_rate + '%' : '-'}</td>
+          <td>${c.std_error_rate != null ? c.std_error_rate + '%' : '-'}</td>
+          <td>${c.sample_count || '-'}</td>
+          <td style="font-size:12px">${c.last_calibrated_at ? new Date(c.last_calibrated_at).toLocaleDateString('ko-KR') : '-'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('calibrations-table').innerHTML = html;
+    }
+
+    // Manual Trigger
+    async function triggerTask(task) {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.textContent = '실행 중...';
+      const resultEl = document.getElementById('trigger-result');
+
+      try {
+        const resp = await fetch(`${API_BASE}/admin/trigger`, {
+          method: 'POST', headers: apiHeaders(),
+          body: JSON.stringify({ task }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.message);
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<h4 style="margin-bottom:8px;color:var(--success)">실행 완료: ${task}</h4><pre style="font-size:12px;background:var(--bg);padding:12px;border-radius:8px;overflow-x:auto">${JSON.stringify(data.data, null, 2)}</pre>`;
+      } catch (err) {
+        resultEl.style.display = 'block';
+        resultEl.innerHTML = `<h4 style="color:var(--error)">실행 실패: ${task}</h4><p style="font-size:13px">${err.message}</p>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '실행';
+      }
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => loadDashboard());
+  </script>
+</body>
+</html>

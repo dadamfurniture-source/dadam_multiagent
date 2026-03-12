@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise 설정 - 다담 AI</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .settings-grid { display: grid; grid-template-columns: 200px 1fr; gap: 24px; min-height: calc(100vh - 120px); }
+    .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; }
+    .sidebar-item { display: block; padding: 10px 20px; font-size: 14px; color: var(--text-secondary); cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+    .sidebar-item:hover { background: var(--bg); color: var(--text); }
+    .sidebar-item.active { color: var(--primary); background: #eff6ff; font-weight: 600; border-right: 3px solid var(--primary); }
+    .settings-content { padding: 24px; max-width: 800px; }
+    .section-panel { display: none; }
+    .section-panel.active { display: block; }
+    .key-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    .key-info { flex: 1; }
+    .key-prefix { font-family: monospace; font-size: 14px; font-weight: 600; color: var(--text); }
+    .key-meta { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+    .key-scopes { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+    .scope-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #eff6ff; color: var(--primary); }
+    .color-preview { width: 36px; height: 36px; border-radius: 8px; border: 2px solid var(--border); cursor: pointer; }
+    .brand-preview { border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-top: 16px; background: var(--surface); }
+    .usage-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+    .usage-fill { height: 100%; border-radius: 3px; background: var(--primary); transition: width 0.3s; }
+    .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .usage-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+    .usage-value { font-size: 24px; font-weight: 700; }
+    .usage-label { font-size: 12px; color: var(--text-secondary); }
+    .new-key-display { background: #fef3c7; border: 1px solid #f59e0b; border-radius: var(--radius); padding: 16px; margin: 16px 0; }
+    .new-key-display code { font-size: 14px; word-break: break-all; background: #fffbeb; padding: 8px 12px; border-radius: 6px; display: block; margin-top: 8px; }
+    @media (max-width: 768px) { .settings-grid { grid-template-columns: 1fr; } .sidebar { display: flex; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 0; } .sidebar-item { white-space: nowrap; border-right: none !important; } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">다담 AI</a>
+      <nav class="nav">
+        <a href="/projects.html">내 프로젝트</a>
+        <a href="/orders.html">주문 관리</a>
+        <a href="/enterprise.html" style="color:var(--primary);font-weight:600">Enterprise</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="settings-grid">
+    <aside class="sidebar">
+      <button class="sidebar-item active" data-section="api-keys">API Keys</button>
+      <button class="sidebar-item" data-section="brand">브랜드 설정</button>
+      <button class="sidebar-item" data-section="usage">API 사용량</button>
+      <button class="sidebar-item" data-section="exports">내보내기</button>
+    </aside>
+
+    <div class="settings-content">
+      <!-- API Keys -->
+      <div id="section-api-keys" class="section-panel active">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div>
+            <h2>API Keys</h2>
+            <p style="font-size:13px;color:var(--text-secondary)">외부 시스템과 연동하기 위한 API 키를 관리합니다.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="showCreateKeyForm()">+ 새 키 생성</button>
+        </div>
+
+        <!-- Create Key Form -->
+        <div id="create-key-form" style="display:none" class="card" style="margin-bottom:20px">
+          <h3 style="margin-bottom:12px">새 API 키 생성</h3>
+          <div class="form-group">
+            <label class="form-label">키 이름</label>
+            <input type="text" id="key-name" class="form-input" placeholder="예: 쇼핑몰 연동">
+          </div>
+          <div class="form-group">
+            <label class="form-label">권한 범위</label>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <label style="font-size:13px;display:flex;align-items:center;gap:4px"><input type="checkbox" value="projects:read" checked> 프로젝트 조회</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:4px"><input type="checkbox" value="projects:write"> 프로젝트 생성</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:4px"><input type="checkbox" value="exports:read" checked> 내보내기</label>
+              <label style="font-size:13px;display:flex;align-items:center;gap:4px"><input type="checkbox" value="quotes:read" checked> 견적 조회</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">만료일 (선택)</label>
+            <input type="date" id="key-expires" class="form-input" style="width:200px">
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="createApiKey()">생성</button>
+            <button class="btn btn-outline btn-sm" onclick="hideCreateKeyForm()">취소</button>
+          </div>
+        </div>
+
+        <!-- New Key Display -->
+        <div id="new-key-display" style="display:none" class="new-key-display">
+          <strong style="color:#92400e">API 키가 생성되었습니다. 이 키는 다시 표시되지 않으니 안전한 곳에 보관하세요.</strong>
+          <code id="new-key-value"></code>
+          <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="copyKey()">복사</button>
+        </div>
+
+        <!-- Key List -->
+        <div id="api-keys-list">
+          <p style="text-align:center;color:var(--text-secondary);padding:40px">로딩 중...</p>
+        </div>
+      </div>
+
+      <!-- Brand Settings -->
+      <div id="section-brand" class="section-panel">
+        <h2 style="margin-bottom:8px">브랜드 설정</h2>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:24px">견적서와 내보내기에 표시될 브랜드 정보를 설정합니다.</p>
+
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label">회사명</label>
+            <input type="text" id="brand-company" class="form-input" placeholder="예: 다담가구">
+          </div>
+          <div class="form-group">
+            <label class="form-label">로고 URL</label>
+            <input type="url" id="brand-logo" class="form-input" placeholder="https://...">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label class="form-label">메인 색상</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="color" id="brand-color" value="#2563eb" class="color-preview">
+                <input type="text" id="brand-color-text" class="form-input" value="#2563eb" style="width:120px;font-family:monospace">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">보조 색상</label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="color" id="brand-secondary" value="#64748b" class="color-preview">
+                <input type="text" id="brand-secondary-text" class="form-input" value="#64748b" style="width:120px;font-family:monospace">
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">워터마크 텍스트</label>
+            <input type="text" id="brand-watermark" class="form-input" placeholder="예: CONFIDENTIAL - 다담가구">
+          </div>
+          <div class="form-group">
+            <label class="form-label">견적서 하단 문구</label>
+            <textarea id="brand-footer" class="form-textarea" rows="2" placeholder="예: 본 견적서는 3일간 유효합니다."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="saveBrandSettings()">저장</button>
+          <span id="brand-save-status" style="margin-left:12px;font-size:13px;color:var(--success);display:none">저장되었습니다.</span>
+        </div>
+
+        <!-- Preview -->
+        <h3 style="margin-top:24px;margin-bottom:12px">미리보기</h3>
+        <div class="brand-preview" id="brand-preview">
+          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--primary);padding-bottom:12px;margin-bottom:16px">
+            <div>
+              <div style="font-size:20px;font-weight:700" id="preview-company">회사명</div>
+              <div style="font-size:12px;color:var(--text-secondary)">견적서</div>
+            </div>
+            <div style="text-align:right;font-size:12px;color:var(--text-secondary)">
+              <div>견적일: 2026-03-12</div>
+              <div id="preview-watermark" style="color:var(--error);font-weight:600;margin-top:4px"></div>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text-secondary);text-align:center;padding:40px 0;background:var(--bg);border-radius:8px">견적 내용 영역</div>
+          <div style="margin-top:16px;font-size:12px;color:var(--text-secondary);text-align:center" id="preview-footer"></div>
+        </div>
+      </div>
+
+      <!-- API Usage -->
+      <div id="section-usage" class="section-panel">
+        <h2 style="margin-bottom:8px">API 사용량</h2>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:24px">이번 달 API 호출 현황입니다.</p>
+        <div class="usage-grid" id="usage-stats">
+          <div class="usage-card"><div class="usage-value" id="usage-total">-</div><div class="usage-label">총 API 호출</div></div>
+          <div class="usage-card"><div class="usage-value" id="usage-projects">-</div><div class="usage-label">프로젝트 생성</div></div>
+          <div class="usage-card"><div class="usage-value" id="usage-exports">-</div><div class="usage-label">내보내기</div></div>
+        </div>
+        <div class="card">
+          <h3 style="margin-bottom:16px">일별 호출 추이</h3>
+          <div id="usage-chart" style="display:flex;align-items:flex-end;gap:4px;height:120px;padding:8px 0">
+            <p style="color:var(--text-secondary);font-size:13px;align-self:center;width:100%;text-align:center">로딩 중...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exports -->
+      <div id="section-exports" class="section-panel">
+        <h2 style="margin-bottom:8px">Enterprise 내보내기</h2>
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:24px">Enterprise 전용 내보내기 기능입니다.</p>
+
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin-bottom:8px">CAD DXF 도면</h3>
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">AutoCAD R12 호환 DXF 형식으로 배치도를 다운로드합니다. 공장 CAM 소프트웨어에서 바로 사용 가능합니다.</p>
+          <div class="form-group">
+            <label class="form-label">프로젝트 ID</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="dxf-project-id" class="form-input" placeholder="프로젝트 ID 입력">
+              <button class="btn btn-primary btn-sm" onclick="downloadDxf()">DXF 다운로드</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin-bottom:8px">브랜드 견적서</h3>
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">회사 브랜드가 적용된 커스텀 견적서를 생성합니다.</p>
+          <div class="form-group">
+            <label class="form-label">프로젝트 ID</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="quote-project-id" class="form-input" placeholder="프로젝트 ID 입력">
+              <button class="btn btn-outline btn-sm" onclick="downloadBrandedQuote()">견적서 다운로드</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api/v1';
+    const authToken = localStorage.getItem('dadam_token') || '';
+    function apiHeaders() { return { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' }; }
+
+    // Sidebar navigation
+    document.querySelectorAll('.sidebar-item').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`section-${btn.dataset.section}`).classList.add('active');
+        loadSection(btn.dataset.section);
+      };
+    });
+
+    async function loadSection(section) {
+      try {
+        switch (section) {
+          case 'api-keys': await loadApiKeys(); break;
+          case 'brand': await loadBrandSettings(); break;
+          case 'usage': await loadUsage(); break;
+        }
+      } catch (err) { console.error(`Failed to load ${section}:`, err); }
+    }
+
+    // ===== API Keys =====
+    function showCreateKeyForm() { document.getElementById('create-key-form').style.display = 'block'; }
+    function hideCreateKeyForm() { document.getElementById('create-key-form').style.display = 'none'; }
+
+    async function loadApiKeys() {
+      const resp = await fetch(`${API_BASE}/enterprise/api-keys`, { headers: apiHeaders() });
+      const data = await resp.json();
+      const keys = data.data?.keys || [];
+
+      if (!keys.length) {
+        document.getElementById('api-keys-list').innerHTML = '<div class="card" style="text-align:center;color:var(--text-secondary);padding:32px">API 키가 없습니다. 새 키를 생성해보세요.</div>';
+        return;
+      }
+
+      document.getElementById('api-keys-list').innerHTML = keys.map(k => `
+        <div class="key-card">
+          <div class="key-info">
+            <div class="key-prefix">${k.key_prefix}...${k.name ? ` (${k.name})` : ''}</div>
+            <div class="key-meta">
+              생성: ${k.created_at ? new Date(k.created_at).toLocaleDateString('ko-KR') : '-'}
+              ${k.last_used_at ? ` | 마지막 사용: ${new Date(k.last_used_at).toLocaleDateString('ko-KR')}` : ''}
+              ${k.expires_at ? ` | 만료: ${new Date(k.expires_at).toLocaleDateString('ko-KR')}` : ''}
+            </div>
+            <div class="key-scopes">${(k.scopes || []).map(s => `<span class="scope-tag">${s}</span>`).join('')}</div>
+          </div>
+          <button class="btn btn-outline btn-sm" style="color:var(--error);border-color:var(--error)" onclick="revokeKey('${k.id}')">폐기</button>
+        </div>
+      `).join('');
+    }
+
+    async function createApiKey() {
+      const name = document.getElementById('key-name').value;
+      const expires = document.getElementById('key-expires').value || null;
+      const scopes = Array.from(document.querySelectorAll('#create-key-form input[type=checkbox]:checked')).map(c => c.value);
+
+      try {
+        const resp = await fetch(`${API_BASE}/enterprise/api-keys`, {
+          method: 'POST', headers: apiHeaders(),
+          body: JSON.stringify({ name, scopes, expires_at: expires }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.message);
+
+        const keyDisplay = document.getElementById('new-key-display');
+        document.getElementById('new-key-value').textContent = data.data.api_key;
+        keyDisplay.style.display = 'block';
+        hideCreateKeyForm();
+        await loadApiKeys();
+      } catch (err) { alert(`오류: ${err.message}`); }
+    }
+
+    function copyKey() {
+      const key = document.getElementById('new-key-value').textContent;
+      navigator.clipboard.writeText(key);
+      alert('클립보드에 복사되었습니다.');
+    }
+
+    async function revokeKey(id) {
+      if (!confirm('이 API 키를 폐기하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+      try {
+        const resp = await fetch(`${API_BASE}/enterprise/api-keys/${id}`, { method: 'DELETE', headers: apiHeaders() });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.detail || d.message); }
+        document.getElementById('new-key-display').style.display = 'none';
+        await loadApiKeys();
+      } catch (err) { alert(`오류: ${err.message}`); }
+    }
+
+    // ===== Brand Settings =====
+    async function loadBrandSettings() {
+      try {
+        const resp = await fetch(`${API_BASE}/enterprise/brand`, { headers: apiHeaders() });
+        const data = await resp.json();
+        const brand = data.data?.brand || {};
+
+        if (brand.company_display_name) document.getElementById('brand-company').value = brand.company_display_name;
+        if (brand.logo_url) document.getElementById('brand-logo').value = brand.logo_url;
+        if (brand.primary_color) {
+          document.getElementById('brand-color').value = brand.primary_color;
+          document.getElementById('brand-color-text').value = brand.primary_color;
+        }
+        if (brand.secondary_color) {
+          document.getElementById('brand-secondary').value = brand.secondary_color;
+          document.getElementById('brand-secondary-text').value = brand.secondary_color;
+        }
+        if (brand.watermark_text) document.getElementById('brand-watermark').value = brand.watermark_text;
+        if (brand.quote_footer_text) document.getElementById('brand-footer').value = brand.quote_footer_text;
+
+        updateBrandPreview();
+      } catch (err) { console.error('Failed to load brand:', err); }
+    }
+
+    // Sync color inputs
+    document.getElementById('brand-color').oninput = function() { document.getElementById('brand-color-text').value = this.value; updateBrandPreview(); };
+    document.getElementById('brand-color-text').oninput = function() { document.getElementById('brand-color').value = this.value; updateBrandPreview(); };
+    document.getElementById('brand-secondary').oninput = function() { document.getElementById('brand-secondary-text').value = this.value; updateBrandPreview(); };
+    document.getElementById('brand-secondary-text').oninput = function() { document.getElementById('brand-secondary').value = this.value; updateBrandPreview(); };
+    document.getElementById('brand-company').oninput = updateBrandPreview;
+    document.getElementById('brand-watermark').oninput = updateBrandPreview;
+    document.getElementById('brand-footer').oninput = updateBrandPreview;
+
+    function updateBrandPreview() {
+      const company = document.getElementById('brand-company').value || '회사명';
+      const color = document.getElementById('brand-color').value;
+      const watermark = document.getElementById('brand-watermark').value;
+      const footer = document.getElementById('brand-footer').value;
+
+      document.getElementById('preview-company').textContent = company;
+      document.getElementById('preview-company').style.color = color;
+      document.querySelector('.brand-preview').style.borderTopColor = color;
+      document.getElementById('preview-watermark').textContent = watermark;
+      document.getElementById('preview-footer').textContent = footer;
+    }
+
+    async function saveBrandSettings() {
+      const body = {
+        company_display_name: document.getElementById('brand-company').value,
+        logo_url: document.getElementById('brand-logo').value || null,
+        primary_color: document.getElementById('brand-color').value,
+        secondary_color: document.getElementById('brand-secondary').value,
+        watermark_text: document.getElementById('brand-watermark').value || null,
+        quote_footer_text: document.getElementById('brand-footer').value || null,
+      };
+
+      try {
+        const resp = await fetch(`${API_BASE}/enterprise/brand`, { method: 'PUT', headers: apiHeaders(), body: JSON.stringify(body) });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.detail || d.message); }
+        const status = document.getElementById('brand-save-status');
+        status.style.display = 'inline';
+        setTimeout(() => status.style.display = 'none', 3000);
+      } catch (err) { alert(`저장 실패: ${err.message}`); }
+    }
+
+    // ===== Usage =====
+    async function loadUsage() {
+      try {
+        const now = new Date();
+        const resp = await fetch(`${API_BASE}/enterprise/usage?year=${now.getFullYear()}&month=${now.getMonth() + 1}`, { headers: apiHeaders() });
+        const data = await resp.json();
+        const usage = data.data || {};
+
+        document.getElementById('usage-total').textContent = (usage.total_calls || 0).toLocaleString();
+        document.getElementById('usage-projects').textContent = usage.project_calls || 0;
+        document.getElementById('usage-exports').textContent = usage.export_calls || 0;
+
+        // Simple bar chart
+        const daily = usage.daily || [];
+        if (daily.length) {
+          const maxVal = Math.max(...daily.map(d => d.count), 1);
+          document.getElementById('usage-chart').innerHTML = daily.map(d => {
+            const h = Math.max(4, (d.count / maxVal) * 100);
+            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+              <div style="font-size:10px;color:var(--text-secondary)">${d.count}</div>
+              <div style="width:100%;height:${h}px;background:var(--primary);border-radius:3px"></div>
+              <div style="font-size:9px;color:var(--text-secondary)">${d.date?.slice(8) || ''}</div>
+            </div>`;
+          }).join('');
+        } else {
+          document.getElementById('usage-chart').innerHTML = '<p style="color:var(--text-secondary);font-size:13px;align-self:center;width:100%;text-align:center">이번 달 사용 데이터가 없습니다.</p>';
+        }
+      } catch (err) { console.error('Failed to load usage:', err); }
+    }
+
+    // ===== Exports =====
+    function downloadDxf() {
+      const pid = document.getElementById('dxf-project-id').value;
+      if (!pid) return alert('프로젝트 ID를 입력하세요.');
+      window.open(`${API_BASE}/enterprise/exports/${pid}/drawing.dxf?token=${authToken}`, '_blank');
+    }
+
+    function downloadBrandedQuote() {
+      const pid = document.getElementById('quote-project-id').value;
+      if (!pid) return alert('프로젝트 ID를 입력하세요.');
+      window.open(`${API_BASE}/enterprise/exports/${pid}/branded-quote.html?token=${authToken}`, '_blank');
+    }
+
+    // Init
+    document.addEventListener('DOMContentLoaded', () => loadApiKeys());
+  </script>
+</body>
+</html>
