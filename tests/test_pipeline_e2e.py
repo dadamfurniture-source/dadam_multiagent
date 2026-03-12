@@ -416,6 +416,51 @@ def test_exports_route():
     print("  BOM material specs OK")
 
 
+def test_payments_route():
+    """Test Stripe payments route structure"""
+    payments_file = Path(__file__).parent.parent / "api" / "routes" / "payments.py"
+    with open(payments_file, encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source)
+
+    # Verify endpoints
+    assert "checkout" in source, "Missing checkout endpoint"
+    assert "webhook" in source, "Missing webhook endpoint"
+    assert "cancel" in source, "Missing cancel endpoint"
+    assert "change-plan" in source, "Missing change-plan endpoint"
+    assert "/subscription" in source, "Missing subscription query endpoint"
+    print("  5 payment endpoints found OK")
+
+    # Verify webhook event handling
+    webhook_events = [
+        "checkout.session.completed",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+        "invoice.payment_failed",
+    ]
+    for event in webhook_events:
+        assert event in source, f"Missing webhook handler for {event}"
+    print(f"  {len(webhook_events)} webhook events handled OK")
+
+    # Verify Stripe signature verification
+    assert "stripe.Webhook.construct_event" in source, "Missing webhook signature verification"
+    assert "stripe-signature" in source, "Missing signature header check"
+    print("  Webhook signature verification OK")
+
+    # Verify plan sync to profiles
+    assert 'profiles' in source and '"plan"' in source, "Missing profiles plan sync"
+    print("  Plan sync to profiles OK")
+
+    # Verify config fields exist
+    config_file = Path(__file__).parent.parent / "shared" / "config.py"
+    with open(config_file, encoding="utf-8") as f:
+        config_source = f.read()
+    assert "stripe_webhook_secret" in config_source, "Missing stripe_webhook_secret in config"
+    assert "stripe_price_basic" in config_source, "Missing stripe_price_basic in config"
+    print("  Stripe config fields OK")
+
+
 def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
@@ -448,6 +493,7 @@ def run_all():
         ("Migrations - File Check", test_migration_files),
         ("Orders - State Machine & Payments", test_orders_state_machine),
         ("Exports - B2B Route Structure", test_exports_route),
+        ("Payments - Stripe Integration", test_payments_route),
     ]
 
     passed = 0
