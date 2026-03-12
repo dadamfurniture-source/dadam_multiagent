@@ -461,6 +461,57 @@ def test_payments_route():
     print("  Stripe config fields OK")
 
 
+def test_feedback_automation():
+    """Test feedback loop automation system"""
+    # Cron worker
+    cron_file = Path(__file__).parent.parent / "workers" / "feedback_cron.py"
+    with open(cron_file, encoding="utf-8") as f:
+        cron_source = f.read()
+
+    cron_tasks = [
+        "embed_completed_projects",
+        "calibrate_prices",
+        "analyze_as_patterns",
+        "check_lora_trigger",
+        "cleanup_old_training",
+        "auto_register_completed_cases",
+    ]
+    for task in cron_tasks:
+        assert f"async def {task}" in cron_source, f"Missing cron task: {task}"
+    print(f"  {len(cron_tasks)} cron tasks defined OK")
+
+    # TASKS registry
+    assert "TASKS = {" in cron_source, "Missing TASKS registry"
+    assert "all_hourly" in cron_source, "Missing all_hourly aggregator"
+    assert "all_daily" in cron_source, "Missing all_daily aggregator"
+    print("  Task registry + aggregators OK")
+
+    # Admin API
+    admin_file = Path(__file__).parent.parent / "api" / "routes" / "admin.py"
+    with open(admin_file, encoding="utf-8") as f:
+        admin_source = f.read()
+
+    admin_endpoints = ["/constraints", "/lora-models", "/training-queue", "/trigger", "/calibrations"]
+    for endpoint in admin_endpoints:
+        assert endpoint in admin_source, f"Missing admin endpoint: {endpoint}"
+    print(f"  {len(admin_endpoints)} admin endpoints OK")
+
+    # Constraint workflow
+    assert "approve" in admin_source and "reject" in admin_source, "Missing constraint approval flow"
+    assert "proposed" in admin_source and "applied" in admin_source, "Missing constraint status transitions"
+    print("  Constraint approval workflow OK")
+
+    # LoRA model activation
+    assert "activate" in admin_source, "Missing LoRA model activation"
+    assert "is_active" in admin_source, "Missing is_active toggle"
+    print("  LoRA model management OK")
+
+    # Manual trigger
+    assert "manual_trigger" in admin_source, "Missing manual trigger endpoint"
+    assert "from workers.feedback_cron import" in admin_source, "Missing worker import in admin"
+    print("  Manual trigger integration OK")
+
+
 def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
@@ -494,6 +545,7 @@ def run_all():
         ("Orders - State Machine & Payments", test_orders_state_machine),
         ("Exports - B2B Route Structure", test_exports_route),
         ("Payments - Stripe Integration", test_payments_route),
+        ("Feedback Automation - Cron + Admin", test_feedback_automation),
     ]
 
     passed = 0
