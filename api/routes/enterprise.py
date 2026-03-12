@@ -9,20 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from api.middleware.auth import CurrentUser, get_current_user
+from api.middleware.auth import CurrentUser, get_current_user, require_enterprise
 from api.schemas.common import APIResponse
 from shared.supabase_client import get_service_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
-
-PLAN_ORDER = {"free": 0, "basic": 1, "pro": 2, "enterprise": 3}
-
-
-def _require_enterprise(user: CurrentUser):
-    if PLAN_ORDER.get(user.plan, 0) < PLAN_ORDER["enterprise"]:
-        raise HTTPException(403, "Enterprise 플랜에서 사용 가능합니다.")
 
 
 # ===== API Key 관리 =====
@@ -40,7 +33,7 @@ async def create_api_key(
     user: CurrentUser = Depends(get_current_user),
 ):
     """API Key 생성 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     # 키 개수 제한 (최대 10개)
@@ -93,7 +86,7 @@ async def list_api_keys(
     user: CurrentUser = Depends(get_current_user),
 ):
     """API Key 목록 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     result = (
@@ -113,7 +106,7 @@ async def revoke_api_key(
     user: CurrentUser = Depends(get_current_user),
 ):
     """API Key 비활성화 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     result = (
@@ -148,7 +141,7 @@ async def get_brand_settings(
     user: CurrentUser = Depends(get_current_user),
 ):
     """브랜드 설정 조회 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     result = (
@@ -175,7 +168,7 @@ async def update_brand_settings(
     user: CurrentUser = Depends(get_current_user),
 ):
     """브랜드 설정 업데이트 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     update_data = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -208,7 +201,7 @@ async def export_drawing_dxf(
     user: CurrentUser = Depends(get_current_user),
 ):
     """CAD DXF 도면 다운로드 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     project = (
@@ -268,7 +261,7 @@ async def export_branded_quote(
     user: CurrentUser = Depends(get_current_user),
 ):
     """브랜드 커스텀 견적서 HTML (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     project = (
@@ -325,7 +318,7 @@ async def get_api_usage(
     user: CurrentUser = Depends(get_current_user),
 ):
     """API 사용량 통계 (Enterprise)"""
-    _require_enterprise(user)
+    require_enterprise(user)
     client = get_service_client()
 
     from datetime import timedelta

@@ -123,20 +123,24 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="인증 실패")
 
 
-async def require_plan(minimum_plan: str):
-    """최소 요금제 확인 데코레이터 팩토리"""
-    plan_order = {"free": 0, "basic": 1, "pro": 2, "enterprise": 3}
+PLAN_ORDER = {"free": 0, "basic": 1, "pro": 2, "enterprise": 3}
 
-    def checker(user: CurrentUser = Depends(get_current_user)):
-        user_level = plan_order.get(user.plan, 0)
-        required_level = plan_order.get(minimum_plan, 0)
 
-        if user_level < required_level:
-            raise HTTPException(
-                status_code=403,
-                detail=f"이 기능은 {minimum_plan} 이상 플랜에서 사용 가능합니다. "
-                       f"현재 플랜: {user.plan}",
-            )
-        return user
+def require_pro(user: CurrentUser):
+    """Pro 이상 플랜 필수"""
+    if PLAN_ORDER.get(user.plan, 0) < PLAN_ORDER["pro"]:
+        raise HTTPException(403, "Pro 이상 플랜에서 사용 가능합니다.")
 
-    return checker
+
+def require_enterprise(user: CurrentUser):
+    """Enterprise 플랜 필수"""
+    if PLAN_ORDER.get(user.plan, 0) < PLAN_ORDER["enterprise"]:
+        raise HTTPException(403, "Enterprise 플랜에서 사용 가능합니다.")
+
+
+def require_admin(user: CurrentUser):
+    """관리자 역할 필수 (company_type='admin' 또는 Enterprise 플랜)"""
+    is_admin = user.company_type == "admin"
+    is_enterprise = PLAN_ORDER.get(user.plan, 0) >= PLAN_ORDER["enterprise"]
+    if not is_admin and not is_enterprise:
+        raise HTTPException(403, "관리자 권한이 필요합니다.")

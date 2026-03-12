@@ -6,20 +6,13 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from api.middleware.auth import CurrentUser, get_current_user
+from api.middleware.auth import CurrentUser, get_current_user, require_admin
 from api.schemas.common import APIResponse
 from shared.supabase_client import get_service_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
-
-PLAN_ORDER = {"free": 0, "basic": 1, "pro": 2, "enterprise": 3}
-
-
-def _require_pro(user: CurrentUser):
-    if PLAN_ORDER.get(user.plan, 0) < PLAN_ORDER["pro"]:
-        raise HTTPException(403, "Pro 이상 플랜에서 사용 가능합니다.")
 
 
 # ===== 제약조건 관리 =====
@@ -37,7 +30,7 @@ async def list_constraints(
     user: CurrentUser = Depends(get_current_user),
 ):
     """학습된 제약조건 목록 (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
     client = get_service_client()
 
     query = (
@@ -61,7 +54,7 @@ async def update_constraint(
     user: CurrentUser = Depends(get_current_user),
 ):
     """제약조건 승인/거부/적용/폐기 (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
     client = get_service_client()
 
     constraint = (
@@ -117,7 +110,7 @@ async def list_lora_models(
     user: CurrentUser = Depends(get_current_user),
 ):
     """LoRA 모델 버전 목록 (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
     client = get_service_client()
 
     query = (
@@ -139,7 +132,7 @@ async def activate_lora_model(
     user: CurrentUser = Depends(get_current_user),
 ):
     """LoRA 모델 활성화 (기존 활성 모델 비활성화) (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
     client = get_service_client()
 
     model = (
@@ -181,7 +174,7 @@ async def get_training_queue(
     user: CurrentUser = Depends(get_current_user),
 ):
     """LoRA 학습 대기열 조회 (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
     client = get_service_client()
 
     query = (
@@ -229,7 +222,7 @@ async def manual_trigger(
     user: CurrentUser = Depends(get_current_user),
 ):
     """피드백 루프 태스크 수동 트리거 (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
 
     from workers.feedback_cron import (
         analyze_as_patterns,
@@ -270,7 +263,7 @@ async def list_calibrations(
     user: CurrentUser = Depends(get_current_user),
 ):
     """가격 보정 계수 현황 (Pro+)"""
-    _require_pro(user)
+    require_admin(user)
     client = get_service_client()
 
     result = (

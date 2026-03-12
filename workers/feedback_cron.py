@@ -288,11 +288,10 @@ async def check_lora_trigger():
         image_urls = [img["image_url"] for img in images.data]
         image_ids = [img["id"] for img in images.data]
 
-        # 상태 업데이트
-        for img_id in image_ids:
-            client.table("training_queue").update({
-                "status": "training",
-            }).eq("id", img_id).execute()
+        # 상태 일괄 업데이트
+        client.table("training_queue").update({
+            "status": "training",
+        }).in_("id", image_ids).execute()
 
         # 새 모델 버전 레코드
         lora_key = LORA_MODELS.get(category, category)

@@ -391,12 +391,10 @@ def test_exports_route():
     assert "/available" in source, "Missing available exports endpoint"
     print("  5 export endpoints found OK")
 
-    # Verify Pro+ gating
-    assert "_require_pro" in source, "Missing _require_pro gating function"
-    assert 'PLAN_ORDER' in source, "Missing PLAN_ORDER dict"
-    # Count _require_pro calls (should be in SVG, BOM JSON, BOM CSV = 3)
-    require_count = source.count("_require_pro(user)")
-    assert require_count >= 3, f"Expected >=3 _require_pro calls, got {require_count}"
+    # Verify Pro+ gating (uses shared require_pro from auth module)
+    assert "require_pro" in source, "Missing require_pro gating"
+    require_count = source.count("require_pro(user)")
+    assert require_count >= 3, f"Expected >=3 require_pro calls, got {require_count}"
     print(f"  Pro+ gating: {require_count} endpoints gated OK")
 
     # Verify quote is accessible to all plans (no _require_pro in quote endpoint)
@@ -496,6 +494,9 @@ def test_feedback_automation():
         assert endpoint in admin_source, f"Missing admin endpoint: {endpoint}"
     print(f"  {len(admin_endpoints)} admin endpoints OK")
 
+    # Admin role gating (not just Pro plan)
+    assert "require_admin" in admin_source, "Missing admin role gating"
+
     # Constraint workflow
     assert "approve" in admin_source and "reject" in admin_source, "Missing constraint approval flow"
     assert "proposed" in admin_source and "applied" in admin_source, "Missing constraint status transitions"
@@ -553,9 +554,9 @@ def test_enterprise_features():
     assert "api_usage_logs" in source, "Missing usage logs table reference"
     print("  API usage tracking OK")
 
-    # Enterprise gating
-    assert "_require_enterprise" in source, "Missing enterprise plan gating"
-    require_count = source.count("_require_enterprise(user)")
+    # Enterprise gating (uses shared require_enterprise from auth module)
+    assert "require_enterprise" in source, "Missing enterprise plan gating"
+    require_count = source.count("require_enterprise(user)")
     assert require_count >= 7, f"Expected >=7 enterprise-gated endpoints, got {require_count}"
     print(f"  Enterprise gating: {require_count} endpoints OK")
 

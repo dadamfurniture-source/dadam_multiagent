@@ -6,21 +6,11 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from api.middleware.auth import CurrentUser, get_current_user
+from api.middleware.auth import PLAN_ORDER, CurrentUser, get_current_user, require_pro
 from api.schemas.common import APIResponse
 from shared.supabase_client import get_service_client
 
 router = APIRouter(prefix="/exports", tags=["Exports (B2B)"])
-
-PLAN_ORDER = {"free": 0, "basic": 1, "pro": 2, "enterprise": 3}
-
-
-def _require_pro(user: CurrentUser):
-    if PLAN_ORDER.get(user.plan, 0) < PLAN_ORDER["pro"]:
-        raise HTTPException(
-            403,
-            f"이 기능은 Pro 이상 플랜에서 사용 가능합니다. 현재: {user.plan}",
-        )
 
 
 def _get_project_data(project_id: str, user_id: str):
@@ -83,7 +73,7 @@ async def export_drawing_svg(
     user: CurrentUser = Depends(get_current_user),
 ):
     """상세설계 SVG 도면 다운로드 (Pro+)"""
-    _require_pro(user)
+    require_pro(user)
     data = _get_project_data(project_id, user.id)
 
     layout_data = data["layout"]
@@ -121,7 +111,7 @@ async def export_bom_json(
     user: CurrentUser = Depends(get_current_user),
 ):
     """BOM 자재 명세서 JSON (Pro+)"""
-    _require_pro(user)
+    require_pro(user)
     data = _get_project_data(project_id, user.id)
 
     layout_data = data["layout"]
@@ -197,7 +187,7 @@ async def export_bom_csv(
     user: CurrentUser = Depends(get_current_user),
 ):
     """BOM 자재 명세서 CSV 다운로드 (Pro+)"""
-    _require_pro(user)
+    require_pro(user)
     data = _get_project_data(project_id, user.id)
 
     layout_data = data["layout"]
