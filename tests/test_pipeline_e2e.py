@@ -705,7 +705,7 @@ def test_production_readiness():
 
     # Frontend pages
     static_dir = Path(__file__).parent.parent / "static"
-    required_pages = ["index.html", "new.html", "projects.html", "project.html", "orders.html", "pricing.html", "admin.html", "enterprise.html"]
+    required_pages = ["index.html", "new.html", "projects.html", "project.html", "orders.html", "pricing.html", "admin.html", "enterprise.html", "login.html", "signup.html", "auth-callback.html", "account.html"]
     for page in required_pages:
         assert (static_dir / page).exists(), f"Missing page: {page}"
     print(f"  {len(required_pages)} frontend pages OK")
@@ -726,6 +726,24 @@ def test_production_readiness():
     assert "usage" in ent_html, "Enterprise missing usage section"
     assert "dxf" in ent_html.lower(), "Enterprise missing DXF export"
     print("  Enterprise settings sections OK")
+
+    # Auth pages
+    login_html = (static_dir / "login.html").read_text(encoding="utf-8")
+    assert "signInWithPassword" in login_html, "Login missing Supabase auth"
+    assert "signInWithOAuth" in login_html, "Login missing Google OAuth"
+    signup_html = (static_dir / "signup.html").read_text(encoding="utf-8")
+    assert "signUp" in signup_html, "Signup missing Supabase signup"
+    assert "password-strength" in signup_html, "Signup missing password strength"
+    print("  Auth pages (login/signup/callback) OK")
+
+    # Auth guard in app.js
+    app_js = (static_dir / "js" / "app.js").read_text(encoding="utf-8")
+    assert "requireAuth" in app_js, "Missing auth guard function"
+    assert "apiFetch" in app_js, "Missing 401 handler wrapper"
+    assert "renderNav" in app_js, "Missing dynamic navigation"
+    assert "handleLogout" in app_js, "Missing logout function"
+    assert "site-header" in app_js or "renderNavInto" in app_js, "Missing nav injection"
+    print("  Auth guard + dynamic nav + 401 handler OK")
 
     # CI/CD pipeline
     ci_file = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"

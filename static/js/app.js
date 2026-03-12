@@ -1,5 +1,5 @@
 /**
- * Dadam SaaS Frontend - Project creation, SSE streaming, result display
+ * Dadam SaaS Frontend - Auth, navigation, project creation, SSE streaming
  */
 
 const API_BASE = '/api/v1';
@@ -18,6 +18,117 @@ function apiHeaders() {
     'Content-Type': 'application/json',
   };
 }
+
+// ============================================================
+// Auth Guard + 401 Handler
+// ============================================================
+
+const PUBLIC_PAGES = ['/', '/index.html', '/login.html', '/signup.html', '/auth-callback.html', '/pricing.html'];
+
+function requireAuth() {
+  const path = window.location.pathname;
+  if (PUBLIC_PAGES.includes(path)) return true;
+  if (!authToken) {
+    window.location.href = `/login.html?redirect=${encodeURIComponent(path)}`;
+    return false;
+  }
+  return true;
+}
+
+async function apiFetch(url, options = {}) {
+  const resp = await fetch(url, {
+    ...options,
+    headers: { ...apiHeaders(), ...(options.headers || {}) },
+  });
+  if (resp.status === 401) {
+    localStorage.removeItem('dadam_token');
+    localStorage.removeItem('dadam_refresh_token');
+    localStorage.removeItem('dadam_user');
+    window.location.href = `/login.html?redirect=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error('인증이 만료되었습니다.');
+  }
+  return resp;
+}
+
+function handleLogout() {
+  localStorage.removeItem('dadam_token');
+  localStorage.removeItem('dadam_refresh_token');
+  localStorage.removeItem('dadam_user');
+  window.location.href = '/login.html';
+}
+
+// ============================================================
+// Dynamic Navigation
+// ============================================================
+
+function renderNav() {
+  const header = document.getElementById('site-header');
+  if (!header) {
+    // Fallback: find any header.header element
+    const h = document.querySelector('header.header');
+    if (h) renderNavInto(h);
+    return;
+  }
+  renderNavInto(header);
+}
+
+function renderNavInto(header) {
+  const user = JSON.parse(localStorage.getItem('dadam_user') || 'null');
+  const isLoggedIn = !!authToken && !!user;
+  const path = window.location.pathname;
+
+  function activeStyle(href) {
+    return path === href || path === href.replace('.html', '')
+      ? 'color:var(--primary);font-weight:600' : '';
+  }
+
+  let navLinks = '';
+  if (isLoggedIn) {
+    navLinks = `
+      <a href="/new.html" style="${activeStyle('/new.html')}">새 프로젝트</a>
+      <a href="/projects.html" style="${activeStyle('/projects.html')}">내 프로젝트</a>
+      <a href="/orders.html" style="${activeStyle('/orders.html')}">주문 관리</a>
+      <div style="position:relative;display:inline-block" id="user-menu-wrap">
+        <button onclick="toggleUserMenu()" style="background:none;border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;color:var(--text)">${user.email ? user.email.split('@')[0] : 'My'}</button>
+        <div id="user-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-lg);min-width:160px;z-index:200;overflow:hidden">
+          <a href="/account.html" style="display:block;padding:10px 16px;font-size:13px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">내 계정</a>
+          <a href="/pricing.html" style="display:block;padding:10px 16px;font-size:13px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">요금제</a>
+          <a href="/admin.html" style="display:block;padding:10px 16px;font-size:13px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">Admin</a>
+          <a href="/enterprise.html" style="display:block;padding:10px 16px;font-size:13px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">Enterprise</a>
+          <button onclick="handleLogout()" style="display:block;width:100%;text-align:left;padding:10px 16px;font-size:13px;color:var(--error);background:none;border:none;cursor:pointer">로그아웃</button>
+        </div>
+      </div>
+    `;
+  } else {
+    navLinks = `
+      <a href="#pricing" style="${activeStyle('/pricing.html')}">요금제</a>
+      <a href="/login.html" class="btn btn-outline btn-sm">로그인</a>
+      <a href="/signup.html" class="btn btn-primary btn-sm">무료 시작</a>
+    `;
+  }
+
+  header.innerHTML = `
+    <div class="container">
+      <a href="/" class="logo">다담 AI</a>
+      <nav class="nav">${navLinks}</nav>
+    </div>
+  `;
+  header.className = 'header';
+}
+
+function toggleUserMenu() {
+  const menu = document.getElementById('user-menu');
+  if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+// Close menu on outside click
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('user-menu-wrap');
+  const menu = document.getElementById('user-menu');
+  if (menu && wrap && !wrap.contains(e.target)) {
+    menu.style.display = 'none';
+  }
+});
 
 // ============================================================
 // Category & Style Data
@@ -136,16 +247,14 @@ function initNewProjectPage() {
         body: formData,
       });
 
+      if (resp.status === 401) { handleLogout(); return; }
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.message || 'Failed');
 
       const projectId = data.data.project_id;
 
       // Start AI pipeline
-      await fetch(`${API_BASE}/projects/${projectId}/run`, {
-        method: 'POST',
-        headers: apiHeaders(),
-      });
+      await apiFetch(`${API_BASE}/projects/${projectId}/run`, { method: 'POST' });
 
       // Navigate to result page with SSE
       window.location.href = `/project.html?id=${projectId}`;
@@ -189,7 +298,6 @@ function initProjectPage() {
 
   // Start SSE connection
   const eventSource = new EventSource(`${API_BASE}/projects/${projectId}/stream`);
-  let currentStageIdx = 0;
 
   eventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -205,7 +313,6 @@ function initProjectPage() {
 
       case 'progress':
         appendLog(data.content);
-        // Auto-advance pipeline steps based on content keywords
         if (data.content.includes('space') || data.content.includes('analyz')) {
           setStageActive('space_analysis');
         } else if (data.content.includes('layout') || data.content.includes('design')) {
@@ -235,7 +342,6 @@ function initProjectPage() {
 
   eventSource.onerror = () => {
     eventSource.close();
-    // Check if project already completed
     loadProjectResult(projectId);
   };
 }
@@ -277,7 +383,7 @@ function showError(message) {
 
 async function loadProjectResult(projectId) {
   try {
-    const resp = await fetch(`${API_BASE}/projects/${projectId}`, { headers: apiHeaders() });
+    const resp = await apiFetch(`${API_BASE}/projects/${projectId}`);
     const data = await resp.json();
     if (data.data) displayFullResult(data.data);
   } catch (err) {
@@ -286,7 +392,6 @@ async function loadProjectResult(projectId) {
 }
 
 function displayResult(result) {
-  // Display simulation images
   const imagesEl = document.getElementById('result-images');
   if (!imagesEl || !result) return;
 
@@ -303,7 +408,6 @@ function displayResult(result) {
     });
   }
 
-  // Display quote
   if (result.quote) displayQuote(result.quote);
 }
 
@@ -325,7 +429,6 @@ function displayFullResult(data) {
   if (data.quote) displayQuote(data.quote);
   if (data.layout) displayLayout(data.layout);
 
-  // Mark all stages done
   PIPELINE_STAGES.forEach(s => setStageDone(s));
 }
 
@@ -381,7 +484,7 @@ async function initProjectListPage() {
   if (!listEl) return;
 
   try {
-    const resp = await fetch(`${API_BASE}/projects`, { headers: apiHeaders() });
+    const resp = await apiFetch(`${API_BASE}/projects`);
     const data = await resp.json();
 
     if (!data.data?.items?.length) {
@@ -414,6 +517,8 @@ async function initProjectListPage() {
 // ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+  renderNav();
+  if (!requireAuth()) return;
   initNewProjectPage();
   initProjectPage();
   initProjectListPage();
