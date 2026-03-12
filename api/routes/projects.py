@@ -1,8 +1,11 @@
 """프로젝트 API — AI 시뮬레이션 요청/조회"""
 
+import json as json_mod
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from api.middleware.auth import CurrentUser, get_current_user
 from api.schemas.common import APIResponse
@@ -36,7 +39,6 @@ async def create_project(
 
     if limit > 0:
         client = get_service_client()
-        from datetime import datetime
         month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0).isoformat()
         count_result = (
             client.table("projects")
@@ -56,7 +58,8 @@ async def create_project(
     client = get_service_client()
     project_id = str(uuid.uuid4())
     image_content = await image.read()
-    image_path = f"{user.id}/{project_id}/original.{image.filename.split('.')[-1]}"
+    ext = (image.filename or "upload.jpg").rsplit(".", 1)[-1]
+    image_path = f"{user.id}/{project_id}/original.{ext}"
 
     client.storage.from_("originals").upload(
         image_path,
@@ -214,18 +217,22 @@ async def run_project(
 @router.get("/{project_id}/stream")
 async def stream_project(
     project_id: str,
+    user: CurrentUser = Depends(get_current_user),
 ):
     """프로젝트 처리 SSE 스트림 — 실시간 진행 상황 전달"""
-    import json as json_mod
-
-    from fastapi.responses import StreamingResponse
-
     from agents.orchestrator import ProjectRequest, process_project
 
     client = get_service_client()
 
-    # 프로젝트 조회
-    project = client.table("projects").select("*").eq("id", project_id).single().execute()
+    # 프로젝트 조회 + 소유권 확인
+    project = (
+        client.table("projects")
+        .select("*")
+        .eq("id", project_id)
+        .eq("user_id", user.id)
+        .single()
+        .execute()
+    )
     if not project.data:
         raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
 

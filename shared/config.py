@@ -26,7 +26,7 @@ class Settings(BaseModel):
     # App
     environment: str = os.getenv("ENVIRONMENT", "development")
     api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8000")
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
 
 
 settings = Settings()

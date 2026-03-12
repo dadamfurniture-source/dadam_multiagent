@@ -52,8 +52,8 @@ async def get_current_user(
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"인증 실패: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=401, detail="인증 실패")
 
 
 async def require_plan(minimum_plan: str):

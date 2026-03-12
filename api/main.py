@@ -60,7 +60,9 @@ async def index():
 
 @app.get("/{page}.html")
 async def serve_page(page: str):
+    if "/" in page or "\\" in page or ".." in page:
+        return FileResponse(STATIC_DIR / "index.html")
     file_path = STATIC_DIR / f"{page}.html"
-    if file_path.exists():
+    if file_path.exists() and file_path.resolve().parent == STATIC_DIR.resolve():
         return FileResponse(file_path)
     return FileResponse(STATIC_DIR / "index.html")

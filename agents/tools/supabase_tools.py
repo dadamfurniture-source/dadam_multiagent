@@ -1,22 +1,9 @@
 """Supabase MCP 도구 - DB/Storage 연동"""
 
 import json
-import os
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
-from supabase import create_client
-
-_supabase = None
-
-
-def _get_client():
-    global _supabase
-    if _supabase is None:
-        _supabase = create_client(
-            os.environ["SUPABASE_URL"],
-            os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-        )
-    return _supabase
+from shared.supabase_client import get_service_client as _get_client
 
 
 @tool(

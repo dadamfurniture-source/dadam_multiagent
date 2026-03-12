@@ -6,20 +6,9 @@ from datetime import datetime
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
-from supabase import create_client
+from shared.supabase_client import get_service_client as _get_client
 
-_supabase = None
 EMBEDDING_MODEL = "text-embedding-3-small"
-
-
-def _get_client():
-    global _supabase
-    if _supabase is None:
-        _supabase = create_client(
-            os.environ["SUPABASE_URL"],
-            os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-        )
-    return _supabase
 
 
 async def _get_embedding(text: str) -> list[float]:

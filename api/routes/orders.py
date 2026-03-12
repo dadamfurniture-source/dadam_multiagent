@@ -1,6 +1,5 @@
 """주문/운영 API — 상담~설치~A/S 생명주기 + 운영 에이전트 트리거"""
 
-import asyncio
 import json as json_mod
 import logging
 
@@ -306,10 +305,7 @@ async def update_order_status(
     }).execute()
 
     # 운영 에이전트 트리거 (비동기)
-    background.add_task(
-        asyncio.ensure_future,
-        _fire_ops_event(f"status_change:{body.status}", order_id, {"status": body.status}),
-    )
+    background.add_task(_fire_ops_event, f"status_change:{body.status}", order_id, {"status": body.status})
 
     return APIResponse(
         message=f"상태가 '{body.status}'로 변경되었습니다.",
@@ -374,12 +370,10 @@ async def record_payment(
 
     # 운영 에이전트 트리거 (비동기)
     background.add_task(
-        asyncio.ensure_future,
-        _fire_ops_event(
-            f"payment_received:{body.payment_type}",
-            order_id,
-            {"amount": body.amount, "category": body.payment_type},
-        ),
+        _fire_ops_event,
+        f"payment_received:{body.payment_type}",
+        order_id,
+        {"amount": body.amount, "category": body.payment_type},
     )
 
     return APIResponse(
@@ -434,10 +428,7 @@ async def create_as_ticket(
     )
 
     # 운영 에이전트 트리거 (비동기)
-    background.add_task(
-        asyncio.ensure_future,
-        _fire_ops_event("as_request", order_id, {"type": body.type, "description": body.description}),
-    )
+    background.add_task(_fire_ops_event, "as_request", order_id, {"type": body.type, "description": body.description})
 
     return APIResponse(
         message="A/S가 접수되었습니다.",
