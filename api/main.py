@@ -62,6 +62,15 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(enterprise.router, prefix="/api/v1")
 
 
+@app.get("/api/v1/config")
+async def frontend_config():
+    """프론트엔드에 필요한 공개 설정값 (Supabase URL, anon key)"""
+    return {
+        "supabase_url": settings.supabase_url,
+        "supabase_anon_key": settings.supabase_anon_key,
+    }
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "dadam-saas", "version": "0.1.0"}

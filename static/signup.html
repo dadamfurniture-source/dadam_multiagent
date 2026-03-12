@@ -90,17 +90,25 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const SUPABASE_URL = window.__SUPABASE_URL__ || localStorage.getItem('supabase_url') || '';
-    const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__ || localStorage.getItem('supabase_anon_key') || '';
-
     let supabase = null;
-    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
 
     if (localStorage.getItem('dadam_token')) {
       window.location.href = '/projects.html';
     }
+
+    // Load Supabase config from server
+    async function initSupabase() {
+      try {
+        const resp = await fetch('/api/v1/config');
+        const cfg = await resp.json();
+        if (cfg.supabase_url && cfg.supabase_anon_key) {
+          supabase = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+        }
+      } catch (e) {
+        console.error('Failed to load config:', e);
+      }
+    }
+    initSupabase();
 
     function showError(msg) {
       const el = document.getElementById('auth-error');

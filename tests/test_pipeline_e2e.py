@@ -705,7 +705,7 @@ def test_production_readiness():
 
     # Frontend pages
     static_dir = Path(__file__).parent.parent / "static"
-    required_pages = ["index.html", "new.html", "projects.html", "project.html", "orders.html", "pricing.html", "admin.html", "enterprise.html", "login.html", "signup.html", "auth-callback.html", "account.html"]
+    required_pages = ["index.html", "new.html", "projects.html", "project.html", "orders.html", "pricing.html", "admin.html", "enterprise.html", "login.html", "signup.html", "auth-callback.html", "account.html", "forgot-password.html"]
     for page in required_pages:
         assert (static_dir / page).exists(), f"Missing page: {page}"
     print(f"  {len(required_pages)} frontend pages OK")
@@ -744,6 +744,36 @@ def test_production_readiness():
     assert "handleLogout" in app_js, "Missing logout function"
     assert "site-header" in app_js or "renderNavInto" in app_js, "Missing nav injection"
     print("  Auth guard + dynamic nav + 401 handler OK")
+
+    # Token key consistency: all pages must use dadam_token, not access_token
+    orders_html = (static_dir / "orders.html").read_text(encoding="utf-8")
+    assert "dadam_token" in orders_html, "orders.html should use dadam_token"
+    assert "access_token" not in orders_html, "orders.html still uses access_token (should be dadam_token)"
+    print("  Token key consistency (dadam_token) OK")
+
+    # Admin/Enterprise must load app.js for auth guard + dynamic nav
+    assert 'id="site-header"' in admin_html, "admin.html missing site-header id"
+    assert "app.js" in admin_html, "admin.html must load app.js"
+    assert 'id="site-header"' in ent_html, "enterprise.html missing site-header id"
+    assert "app.js" in ent_html, "enterprise.html must load app.js"
+    print("  Admin/Enterprise load app.js OK")
+
+    # Config endpoint exists in main.py
+    assert "/api/v1/config" in main_source, "Missing /api/v1/config endpoint"
+    print("  Config endpoint for Supabase credentials OK")
+
+    # Login/signup use /api/v1/config instead of hardcoded values
+    assert "/api/v1/config" in login_html, "login.html should fetch config from API"
+    assert "/api/v1/config" in signup_html, "signup.html should fetch config from API"
+    assert "window.__SUPABASE_URL__" not in login_html, "login.html should not use window.__SUPABASE_URL__"
+    assert "window.__SUPABASE_URL__" not in signup_html, "signup.html should not use window.__SUPABASE_URL__"
+    print("  Auth pages use config endpoint OK")
+
+    # Forgot password page
+    forgot_html = (static_dir / "forgot-password.html").read_text(encoding="utf-8")
+    assert "resetPasswordForEmail" in forgot_html, "forgot-password.html missing Supabase resetPasswordForEmail"
+    assert "/api/v1/config" in forgot_html, "forgot-password.html should use config endpoint"
+    print("  Forgot password page OK")
 
     # CI/CD pipeline
     ci_file = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"

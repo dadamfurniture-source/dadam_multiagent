@@ -41,16 +41,7 @@
   </style>
 </head>
 <body>
-  <header class="header">
-    <div class="container">
-      <a href="/" class="logo">다담 AI</a>
-      <nav class="nav">
-        <a href="/projects.html">내 프로젝트</a>
-        <a href="/orders.html">주문 관리</a>
-        <a href="/admin.html" style="color:var(--primary);font-weight:600">Admin</a>
-      </nav>
-    </div>
-  </header>
+  <header class="header" id="site-header"></header>
 
   <div class="admin-grid">
     <aside class="sidebar">
@@ -158,10 +149,8 @@
     </div>
   </div>
 
+  <script src="/static/js/app.js"></script>
   <script>
-    const API_BASE = '/api/v1';
-    const authToken = localStorage.getItem('dadam_token') || '';
-    function apiHeaders() { return { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' }; }
 
     // Sidebar navigation
     document.querySelectorAll('.sidebar-item').forEach(btn => {

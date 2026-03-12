@@ -15,14 +15,13 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    const SUPABASE_URL = window.__SUPABASE_URL__ || localStorage.getItem('supabase_url') || '';
-    const SUPABASE_ANON_KEY = window.__SUPABASE_ANON_KEY__ || localStorage.getItem('supabase_anon_key') || '';
-
     async function handleCallback() {
       try {
-        if (!SUPABASE_URL || !SUPABASE_ANON_KEY) throw new Error('Supabase 설정이 필요합니다.');
+        const cfgResp = await fetch('/api/v1/config');
+        const cfg = await cfgResp.json();
+        if (!cfg.supabase_url || !cfg.supabase_anon_key) throw new Error('Supabase 설정이 필요합니다.');
 
-        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const sb = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
         const { data, error } = await sb.auth.getSession();
         if (error) throw error;
 
