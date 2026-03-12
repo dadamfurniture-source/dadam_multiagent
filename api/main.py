@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from api.middleware.error_handler import register_error_handlers
 from api.middleware.logging_mw import RequestLoggingMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
+from api.middleware.security_headers import SecurityHeadersMiddleware
 from api.routes import accounting, admin, enterprise, exports, feedback, orders, payments, projects
 from shared.config import settings
 
