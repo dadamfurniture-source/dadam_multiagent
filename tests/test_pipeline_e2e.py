@@ -775,6 +775,23 @@ def test_production_readiness():
     assert "/api/v1/config" in forgot_html, "forgot-password.html should use config endpoint"
     print("  Forgot password page OK")
 
+    # Security headers middleware
+    sec_mw = Path(__file__).parent.parent / "api" / "middleware" / "security_headers.py"
+    assert sec_mw.exists(), "Missing security_headers.py middleware"
+    sec_source = sec_mw.read_text(encoding="utf-8")
+    for header in ["X-Content-Type-Options", "X-Frame-Options", "Strict-Transport-Security",
+                    "Content-Security-Policy", "Referrer-Policy", "Permissions-Policy"]:
+        assert header in sec_source, f"Missing security header: {header}"
+    assert "SecurityHeadersMiddleware" in main_source, "SecurityHeadersMiddleware not registered in main.py"
+    print("  Security headers middleware (6 headers) OK")
+
+    # Async pipeline (BackgroundTasks)
+    projects_source = (Path(__file__).parent.parent / "api" / "routes" / "projects.py").read_text(encoding="utf-8")
+    assert "BackgroundTasks" in projects_source, "projects.py missing BackgroundTasks import"
+    assert "background_tasks.add_task" in projects_source, "projects.py missing background_tasks.add_task call"
+    assert "pipeline_stage" in projects_source, "projects.py missing pipeline_stage tracking"
+    print("  Async pipeline with BackgroundTasks OK")
+
     # CI/CD pipeline
     ci_file = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
     assert ci_file.exists(), "Missing CI/CD pipeline"
@@ -789,12 +806,12 @@ def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
 
-    expected = ["001_foundation.sql", "002_storage.sql", "003_feedback_loop.sql", "004_enterprise.sql"]
+    expected = ["001_foundation.sql", "002_storage.sql", "003_feedback_loop.sql", "004_enterprise.sql", "005_pipeline_stage.sql"]
     for filename in expected:
         filepath = migrations_dir / filename
         assert filepath.exists(), f"Missing migration: {filename}"
         content = filepath.read_text(encoding="utf-8")
-        has_sql = any(kw in content for kw in ["CREATE TABLE", "CREATE EXTENSION", "CREATE POLICY", "INSERT INTO"])
+        has_sql = any(kw in content for kw in ["CREATE TABLE", "CREATE EXTENSION", "CREATE POLICY", "INSERT INTO", "ALTER TABLE"])
         assert has_sql, f"{filename}: no SQL statements found"
         print(f"  {filename}: {len(content)} bytes OK")
 

@@ -40,6 +40,7 @@ app = FastAPI(
 
 # 미들웨어 (역순으로 등록 = 먼저 등록한 것이 바깥 레이어)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,

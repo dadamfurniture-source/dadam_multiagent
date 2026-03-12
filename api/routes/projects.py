@@ -1,11 +1,12 @@
 """프로젝트 API — AI 시뮬레이션 요청/조회"""
 
+import asyncio
 import json as json_mod
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from api.middleware.auth import CurrentUser, get_current_user
@@ -186,12 +187,68 @@ async def get_project(
     return APIResponse(data=data)
 
 
+def _run_pipeline_sync(project_id: str, user_id: str, user_plan: str, category: str,
+                        style: str | None, budget: int | None, image_url: str, notes: str | None):
+    """백그라운드에서 AI 파이프라인을 동기적으로 실행 (BackgroundTasks에서 호출)"""
+    from agents.orchestrator import ProjectRequest, process_project
+
+    async def _run():
+        client = get_service_client()
+        request = ProjectRequest(
+            project_id=project_id,
+            user_id=user_id,
+            user_plan=user_plan,
+            category=category,
+            style=style,
+            budget=budget,
+            image_url=image_url,
+            notes=notes,
+        )
+
+        pipeline_log = []
+        try:
+            async for event in process_project(request):
+                pipeline_log.append(event)
+                # 진행 상황을 pipeline_stage 필드에 기록
+                if event.get("type") == "progress":
+                    content = event.get("content", "")
+                    stage = "processing"
+                    if "analyz" in content or "space" in content:
+                        stage = "space_analysis"
+                    elif "layout" in content or "design" in content:
+                        stage = "design"
+                    elif "image" in content or "generat" in content:
+                        stage = "image_gen"
+                    elif "quote" in content or "price" in content:
+                        stage = "quote"
+                    client.table("projects").update({
+                        "pipeline_stage": stage,
+                    }).eq("id", project_id).execute()
+
+            client.table("projects").update({
+                "status": "completed",
+                "pipeline_stage": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", project_id).execute()
+
+        except Exception as e:
+            logger.error("Project %s pipeline failed: %s", project_id, e, exc_info=True)
+            client.table("projects").update({
+                "status": "failed",
+                "pipeline_stage": "failed",
+            }).eq("id", project_id).execute()
+
+    # BackgroundTasks에서는 동기 함수가 호출되므로 asyncio.run 사용
+    asyncio.run(_run())
+
+
 @router.post("/{project_id}/run", response_model=APIResponse)
 async def run_project(
     project_id: str,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
-    """AI 파이프라인 실행 시작 — 프로젝트 상태를 'processing'으로 변경하고 SSE 스트림 URL 반환"""
+    """AI 파이프라인 실행 시작 — BackgroundTasks로 비동기 실행, SSE로 상태 폴링"""
     client = get_service_client()
 
     project = (
@@ -210,7 +267,35 @@ async def run_project(
         raise HTTPException(400, f"현재 상태({project.data['status']})에서는 실행할 수 없습니다.")
 
     # 상태 업데이트
-    client.table("projects").update({"status": "processing"}).eq("id", project_id).execute()
+    client.table("projects").update({
+        "status": "processing",
+        "pipeline_stage": "started",
+    }).eq("id", project_id).execute()
+
+    # 원본 이미지 URL 조회
+    p = project.data
+    original_img = (
+        client.table("generated_images")
+        .select("image_url")
+        .eq("project_id", project_id)
+        .eq("type", "original")
+        .limit(1)
+        .execute()
+    )
+    image_url = original_img.data[0]["image_url"] if original_img.data else ""
+
+    # 백그라운드에서 파이프라인 실행
+    background_tasks.add_task(
+        _run_pipeline_sync,
+        project_id=project_id,
+        user_id=p["user_id"],
+        user_plan=user.plan,
+        category=p["category"],
+        style=p.get("style"),
+        budget=p.get("budget"),
+        image_url=image_url,
+        notes=p.get("notes"),
+    )
 
     return APIResponse(
         message="AI 파이프라인이 시작되었습니다.",
@@ -227,12 +312,9 @@ async def stream_project(
     project_id: str,
     user: CurrentUser = Depends(get_current_user),
 ):
-    """프로젝트 처리 SSE 스트림 — 실시간 진행 상황 전달"""
-    from agents.orchestrator import ProjectRequest, process_project
-
+    """프로젝트 처리 SSE 스트림 — DB 폴링으로 백그라운드 파이프라인 진행 상황 전달"""
     client = get_service_client()
 
-    # 프로젝트 조회 + 소유권 확인
     project = (
         client.table("projects")
         .select("*")
@@ -244,53 +326,39 @@ async def stream_project(
     if not project.data:
         raise HTTPException(404, "프로젝트를 찾을 수 없습니다.")
 
-    p = project.data
-
-    # 원본 이미지 URL 조회
-    original_img = (
-        client.table("generated_images")
-        .select("image_url")
-        .eq("project_id", project_id)
-        .eq("type", "original")
-        .limit(1)
-        .execute()
-    )
-    image_url = original_img.data[0]["image_url"] if original_img.data else ""
-
-    # 사용자 프로필에서 플랜 조회
-    profile = (
-        client.table("profiles")
-        .select("plan")
-        .eq("id", p["user_id"])
-        .single()
-        .execute()
-    )
-    user_plan = profile.data.get("plan", "free") if profile.data else "free"
-
-    request = ProjectRequest(
-        project_id=project_id,
-        user_id=p["user_id"],
-        user_plan=user_plan,
-        category=p["category"],
-        style=p.get("style"),
-        budget=p.get("budget"),
-        image_url=image_url,
-        notes=p.get("notes"),
-    )
-
     async def event_generator():
-        try:
-            async for event in process_project(request):
-                yield f"data: {json_mod.dumps(event, ensure_ascii=False)}\n\n"
+        last_stage = ""
+        max_polls = 300  # 최대 5분 (1초 간격)
 
-            # 완료 시 프로젝트 상태 업데이트
-            client.table("projects").update({"status": "completed"}).eq("id", project_id).execute()
-            yield f"data: {json_mod.dumps({'type': 'status', 'stage': 'completed'})}\n\n"
+        for _ in range(max_polls):
+            result = (
+                client.table("projects")
+                .select("status, pipeline_stage")
+                .eq("id", project_id)
+                .single()
+                .execute()
+            )
+            if not result.data:
+                break
 
-        except Exception as e:
-            logger.error("Project %s pipeline failed: %s", project_id, e, exc_info=True)
-            client.table("projects").update({"status": "failed"}).eq("id", project_id).execute()
-            yield f"data: {json_mod.dumps({'type': 'error', 'error': '시뮬레이션 처리 중 오류가 발생했습니다.'})}\n\n"
+            status = result.data.get("status", "")
+            stage = result.data.get("pipeline_stage", "")
+
+            # 새 스테이지면 이벤트 전송
+            if stage and stage != last_stage:
+                last_stage = stage
+                yield f"data: {json_mod.dumps({'type': 'status', 'stage': stage})}\n\n"
+
+                if stage == "completed":
+                    break
+                if stage == "failed":
+                    yield f"data: {json_mod.dumps({'type': 'error', 'error': '시뮬레이션 처리 중 오류가 발생했습니다.'})}\n\n"
+                    break
+
+            if status in ("completed", "failed"):
+                break
+
+            await asyncio.sleep(1)
 
     return StreamingResponse(
         event_generator(),
