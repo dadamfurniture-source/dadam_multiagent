@@ -59,6 +59,8 @@ PLANS = {
             "cad_export",
             "api_access",
             "brand_custom",
+            "dxf_export",
+            "white_label_quote",
         ],
     },
 }

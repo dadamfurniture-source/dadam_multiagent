@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import accounting, admin, exports, feedback, orders, payments, projects
+from api.routes import accounting, admin, enterprise, exports, feedback, orders, payments, projects
 from shared.config import settings
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -44,6 +44,7 @@ app.include_router(feedback.router, prefix="/api/v1")
 app.include_router(exports.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(enterprise.router, prefix="/api/v1")
 
 
 @app.get("/health")

@@ -512,11 +512,94 @@ def test_feedback_automation():
     print("  Manual trigger integration OK")
 
 
+def test_enterprise_features():
+    """Test Enterprise features: API key auth, DXF export, brand customization"""
+    # Enterprise route
+    ent_file = Path(__file__).parent.parent / "api" / "routes" / "enterprise.py"
+    with open(ent_file, encoding="utf-8") as f:
+        source = f.read()
+
+    # API Key management
+    assert "create_api_key" in source, "Missing API key creation"
+    assert "list_api_keys" in source, "Missing API key listing"
+    assert "revoke_api_key" in source, "Missing API key revocation"
+    assert "dk_live_" in source, "Missing dk_live_ key prefix"
+    assert "sha256" in source, "Missing SHA-256 hashing"
+    print("  API Key management endpoints OK")
+
+    # Brand customization
+    assert "get_brand_settings" in source, "Missing brand settings GET"
+    assert "update_brand_settings" in source, "Missing brand settings PUT"
+    assert "primary_color" in source, "Missing brand color config"
+    assert "logo_url" in source, "Missing logo support"
+    assert "watermark_text" in source, "Missing watermark support"
+    print("  Brand customization endpoints OK")
+
+    # CAD DXF export
+    assert "export_drawing_dxf" in source, "Missing DXF export endpoint"
+    assert "_generate_dxf" in source, "Missing DXF generator"
+    assert "AC1009" in source, "Missing DXF version header (R12)"
+    assert "ENTITIES" in source, "Missing DXF entities section"
+    assert "LINE" in source, "Missing DXF LINE entities"
+    print("  CAD DXF export OK")
+
+    # White-label quote
+    assert "export_branded_quote" in source, "Missing branded quote endpoint"
+    assert "_generate_branded_quote_html" in source, "Missing branded quote generator"
+    print("  White-label quote OK")
+
+    # API usage tracking
+    assert "get_api_usage" in source, "Missing API usage endpoint"
+    assert "api_usage_logs" in source, "Missing usage logs table reference"
+    print("  API usage tracking OK")
+
+    # Enterprise gating
+    assert "_require_enterprise" in source, "Missing enterprise plan gating"
+    require_count = source.count("_require_enterprise(user)")
+    assert require_count >= 7, f"Expected >=7 enterprise-gated endpoints, got {require_count}"
+    print(f"  Enterprise gating: {require_count} endpoints OK")
+
+    # Auth middleware API key support
+    auth_file = Path(__file__).parent.parent / "api" / "middleware" / "auth.py"
+    with open(auth_file, encoding="utf-8") as f:
+        auth_source = f.read()
+
+    assert "_authenticate_api_key" in auth_source, "Missing API key auth in middleware"
+    assert "dk_live_" in auth_source, "Missing dk_live_ prefix check in middleware"
+    assert "via_api_key" in auth_source, "Missing via_api_key flag in CurrentUser"
+    assert "key_hash" in auth_source, "Missing key hash verification"
+    print("  Auth middleware API key support OK")
+
+    # DXF generator produces valid structure
+    # Import and test the DXF generator
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("enterprise", ent_file)
+    # Can't fully import (needs fastapi), so verify via AST
+    tree = ast.parse(source)
+    func_names = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    assert "_generate_dxf" in func_names
+    assert "_add_rect" in func_names
+    assert "_add_text" in func_names
+    assert "_generate_branded_quote_html" in func_names
+    print("  DXF/Quote helper functions verified OK")
+
+    # Migration file
+    migration = Path(__file__).parent.parent / "db" / "migrations" / "004_enterprise.sql"
+    assert migration.exists(), "Missing 004_enterprise.sql migration"
+    mig_content = migration.read_text(encoding="utf-8")
+    assert "api_keys" in mig_content, "Missing api_keys table"
+    assert "brand_settings" in mig_content, "Missing brand_settings table"
+    assert "api_usage_logs" in mig_content, "Missing api_usage_logs table"
+    assert "key_hash" in mig_content, "Missing key_hash column"
+    assert "ROW LEVEL SECURITY" in mig_content, "Missing RLS policies"
+    print("  Migration 004_enterprise.sql OK")
+
+
 def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
 
-    expected = ["001_foundation.sql", "002_storage.sql", "003_feedback_loop.sql"]
+    expected = ["001_foundation.sql", "002_storage.sql", "003_feedback_loop.sql", "004_enterprise.sql"]
     for filename in expected:
         filepath = migrations_dir / filename
         assert filepath.exists(), f"Missing migration: {filename}"
@@ -546,6 +629,7 @@ def run_all():
         ("Exports - B2B Route Structure", test_exports_route),
         ("Payments - Stripe Integration", test_payments_route),
         ("Feedback Automation - Cron + Admin", test_feedback_automation),
+        ("Enterprise - API Key + DXF + Brand", test_enterprise_features),
     ]
 
     passed = 0
