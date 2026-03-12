@@ -16,6 +16,22 @@ from api.middleware.security_headers import SecurityHeadersMiddleware
 from api.routes import accounting, admin, enterprise, exports, feedback, orders, payments, projects
 from shared.config import settings
 
+# Sentry 에러 추적 (DSN이 설정된 경우에만 활성화)
+if settings.sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+            environment=settings.environment,
+            traces_sample_rate=0.1 if settings.is_production else 1.0,
+        )
+    except ImportError:
+        logging.getLogger(__name__).warning("sentry-sdk not installed, skipping Sentry integration")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

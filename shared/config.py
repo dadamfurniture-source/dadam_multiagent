@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
+    # Monitoring
+    sentry_dsn: str = ""
+
     # App
     environment: str = "development"
     api_base_url: str = "http://localhost:8000"
