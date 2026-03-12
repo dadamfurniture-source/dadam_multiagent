@@ -1,7 +1,7 @@
 """인증 미들웨어 — Supabase JWT + API Key 인증"""
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -45,13 +45,29 @@ def _authenticate_api_key(token: str) -> CurrentUser | None:
 
     # 만료 확인
     if key_data.get("expires_at"):
-        if datetime.fromisoformat(key_data["expires_at"].replace("Z", "+00:00")) < datetime.utcnow().replace(tzinfo=None):
+        expires = datetime.fromisoformat(key_data["expires_at"].replace("Z", "+00:00"))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires < datetime.now(timezone.utc):
             return None
 
-    # 사용 시간 업데이트
-    client.table("api_keys").update({
-        "last_used_at": datetime.utcnow().isoformat(),
-    }).eq("id", key_data["id"]).execute()
+    # 사용 시간 업데이트 (쓰기 부하 방지: last_used_at이 1분 이내면 스킵)
+    now = datetime.now(timezone.utc)
+    last_used = key_data.get("last_used_at")
+    should_update = True
+    if last_used:
+        try:
+            last_dt = datetime.fromisoformat(last_used.replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            should_update = (now - last_dt).total_seconds() > 60
+        except (ValueError, TypeError):
+            pass
+
+    if should_update:
+        client.table("api_keys").update({
+            "last_used_at": now.isoformat(),
+        }).eq("id", key_data["id"]).execute()
 
     # 유저 프로필 조회
     profile = (

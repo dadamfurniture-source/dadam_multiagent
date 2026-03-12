@@ -1,6 +1,7 @@
 """프로젝트 API — AI 시뮬레이션 요청/조회"""
 
 import json as json_mod
+import logging
 import uuid
 from datetime import datetime
 
@@ -12,7 +13,11 @@ from api.schemas.common import APIResponse
 from shared.constants import CATEGORIES, PLANS, STYLES
 from shared.supabase_client import get_service_client
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 @router.post("", response_model=APIResponse)
@@ -54,10 +59,12 @@ async def create_project(
                 f"플랜을 업그레이드하세요.",
             )
 
-    # 이미지 업로드
+    # 이미지 업로드 (10MB 제한)
     client = get_service_client()
     project_id = str(uuid.uuid4())
     image_content = await image.read()
+    if len(image_content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(413, f"이미지 크기가 {MAX_UPLOAD_SIZE // (1024*1024)}MB를 초과합니다.")
     ext = (image.filename or "upload.jpg").rsplit(".", 1)[-1]
     image_path = f"{user.id}/{project_id}/original.{ext}"
 
@@ -110,6 +117,7 @@ async def list_projects(
     user: CurrentUser = Depends(get_current_user),
 ):
     """내 프로젝트 목록 조회"""
+    per_page = min(per_page, 100)
     client = get_service_client()
     query = (
         client.table("projects")
@@ -280,8 +288,9 @@ async def stream_project(
             yield f"data: {json_mod.dumps({'type': 'status', 'stage': 'completed'})}\n\n"
 
         except Exception as e:
+            logger.error("Project %s pipeline failed: %s", project_id, e, exc_info=True)
             client.table("projects").update({"status": "failed"}).eq("id", project_id).execute()
-            yield f"data: {json_mod.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            yield f"data: {json_mod.dumps({'type': 'error', 'error': '시뮬레이션 처리 중 오류가 발생했습니다.'})}\n\n"
 
     return StreamingResponse(
         event_generator(),

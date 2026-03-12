@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 import secrets
 from datetime import datetime
 
@@ -16,6 +17,11 @@ from shared.supabase_client import get_service_client
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/enterprise", tags=["Enterprise"])
+
+
+def _safe_filename(name: str) -> str:
+    """파일명에 안전한 문자만 남김"""
+    return re.sub(r'[^\w\-.]', '_', name)[:100]
 
 
 # ===== API Key 관리 =====
@@ -242,8 +248,7 @@ async def export_drawing_dxf(
 
     dxf_content = _generate_dxf(layout_json, project.data, brand_data)
 
-    project_name = project.data["name"].replace(" ", "_")
-    filename = f"dadam_{project_name}_{drawing_type}.dxf"
+    filename = f"dadam_{_safe_filename(project.data['name'])}_{drawing_type}.dxf"
 
     return Response(
         content=dxf_content,
@@ -301,11 +306,10 @@ async def export_branded_quote(
 
     html = _generate_branded_quote_html(project.data, quote_json, brand_data)
 
-    project_name = project.data["name"].replace(" ", "_")
     return Response(
         content=html,
         media_type="text/html",
-        headers={"Content-Disposition": f'inline; filename="quote_{project_name}.html"'},
+        headers={"Content-Disposition": f'inline; filename="quote_{_safe_filename(project.data["name"])}.html"'},
     )
 
 
@@ -319,14 +323,15 @@ async def get_api_usage(
 ):
     """API 사용량 통계 (Enterprise)"""
     require_enterprise(user)
+    days = min(days, 365)  # 최대 1년
     client = get_service_client()
 
-    from datetime import timedelta
-    since = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    from datetime import timedelta, timezone
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
     logs = (
         client.table("api_usage_logs")
-        .select("endpoint, method, status_code, created_at")
+        .select("endpoint, method, status_code, created_at", count="exact")
         .eq("user_id", user.id)
         .gte("created_at", since)
         .order("created_at", desc=True)
@@ -341,7 +346,7 @@ async def get_api_usage(
         by_endpoint[ep] = by_endpoint.get(ep, 0) + 1
 
     return APIResponse(data={
-        "total_requests": len(logs.data),
+        "total_requests": logs.count or len(logs.data),
         "period_days": days,
         "by_endpoint": by_endpoint,
         "recent": logs.data[:20],

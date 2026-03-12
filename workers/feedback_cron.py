@@ -352,8 +352,8 @@ async def cleanup_old_training():
     )
 
     if rejected.data:
-        for r in rejected.data:
-            client.table("training_queue").delete().eq("id", r["id"]).execute()
+        rejected_ids = [r["id"] for r in rejected.data]
+        client.table("training_queue").delete().in_("id", rejected_ids).execute()
 
     logger.info(f"Cleanup: {rejected.count or 0} rejected deleted, {trained.count or 0} old trained records")
     return {"deleted_rejected": rejected.count or 0, "old_trained": trained.count or 0}
