@@ -99,10 +99,6 @@ async def create_project(
         "type": "original",
     }).execute()
 
-    # TODO: Celery 태스크로 AI 파이프라인 비동기 시작
-    # from workers.tasks import run_simulation_pipeline
-    # run_simulation_pipeline.delay(project_id, user.id, user.plan)
-
     return APIResponse(
         message="프로젝트가 생성되었습니다.",
         data={"project_id": project_id, "status": "created"},

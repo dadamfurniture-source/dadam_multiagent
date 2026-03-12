@@ -773,7 +773,15 @@ def test_production_readiness():
     forgot_html = (static_dir / "forgot-password.html").read_text(encoding="utf-8")
     assert "resetPasswordForEmail" in forgot_html, "forgot-password.html missing Supabase resetPasswordForEmail"
     assert "/api/v1/config" in forgot_html, "forgot-password.html should use config endpoint"
+    assert 'id="site-header"' in forgot_html, "forgot-password.html missing site-header id"
+    assert "app.js" in forgot_html, "forgot-password.html must load app.js"
     print("  Forgot password page OK")
+
+    # pricing.html token consistency
+    pricing_html = (static_dir / "pricing.html").read_text(encoding="utf-8")
+    assert "dadam_token" in pricing_html, "pricing.html should use dadam_token"
+    assert "access_token" not in pricing_html, "pricing.html still uses access_token (should be dadam_token)"
+    print("  Pricing page token consistency OK")
 
     # Security headers middleware
     sec_mw = Path(__file__).parent.parent / "api" / "middleware" / "security_headers.py"
