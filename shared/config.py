@@ -1,36 +1,71 @@
-"""다담 SaaS 설정"""
+"""다담 SaaS 설정 — pydantic-settings로 환경변수 자동 로딩 + 검증"""
 
-import os
+import logging
+import sys
 
-from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
-class Settings(BaseModel):
-    # API Keys
-    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
-    replicate_api_token: str = os.getenv("REPLICATE_API_TOKEN", "")
-    stripe_secret_key: str = os.getenv("STRIPE_SECRET_KEY", "")
-    stripe_webhook_secret: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-    stripe_price_basic: str = os.getenv("STRIPE_PRICE_BASIC", "")
-    stripe_price_pro: str = os.getenv("STRIPE_PRICE_PRO", "")
-    stripe_price_enterprise: str = os.getenv("STRIPE_PRICE_ENTERPRISE", "")
+class Settings(BaseSettings):
+    # Supabase (필수)
+    supabase_url: str = Field(default="")
+    supabase_anon_key: str = Field(default="")
+    supabase_service_key: str = Field(default="", alias="SUPABASE_SERVICE_ROLE_KEY")
 
-    # Supabase
-    supabase_url: str = os.getenv("SUPABASE_URL", "")
-    supabase_anon_key: str = os.getenv("SUPABASE_ANON_KEY", "")
-    supabase_service_key: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    # API Keys (선택 — 기능별 필요 시 검증)
+    anthropic_api_key: str = ""
+    google_api_key: str = ""
+    replicate_api_token: str = ""
+    openai_api_key: str = ""
+
+    # Stripe
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_basic: str = ""
+    stripe_price_pro: str = ""
+    stripe_price_enterprise: str = ""
 
     # Redis
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_url: str = "redis://localhost:6379"
 
     # App
-    environment: str = os.getenv("ENVIRONMENT", "development")
-    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:8000")
-    cors_origins: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")
+    environment: str = "development"
+    api_base_url: str = "http://localhost:8000"
+    cors_origins_raw: str = Field(
+        default="http://localhost:3000,http://localhost:8000",
+        alias="CORS_ORIGINS",
+    )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+        "populate_by_name": True,
+    }
 
 
 settings = Settings()
+
+# 프로덕션에서 필수 설정 누락 시 경고
+if settings.is_production:
+    missing = []
+    if not settings.supabase_url:
+        missing.append("SUPABASE_URL")
+    if not settings.supabase_service_key:
+        missing.append("SUPABASE_SERVICE_ROLE_KEY")
+    if not settings.stripe_webhook_secret:
+        missing.append("STRIPE_WEBHOOK_SECRET")
+    if missing:
+        logger.critical(f"FATAL: Missing required env vars for production: {missing}")
+        sys.exit(1)

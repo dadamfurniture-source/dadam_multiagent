@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from api.middleware.auth import CurrentUser, get_current_user
+from api.middleware.auth import CurrentUser, get_current_user, require_pro
 from api.schemas.common import APIResponse
 from shared.supabase_client import get_service_client
 
@@ -99,8 +99,7 @@ async def get_feedback_stats(
     user: CurrentUser = Depends(get_current_user),
 ):
     """피드백 루프 현황 대시보드 (Pro+)"""
-    if user.plan not in ("pro", "enterprise"):
-        raise HTTPException(403, "Pro 이상 플랜에서 사용 가능합니다.")
+    require_pro(user)
 
     client = get_service_client()
 

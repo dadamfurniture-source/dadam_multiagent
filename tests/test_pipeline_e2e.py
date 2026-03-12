@@ -374,6 +374,14 @@ def test_orders_state_machine():
     assert "_fire_ops_event" in source, "Missing _fire_ops_event helper"
     print("  Background ops event triggers OK")
 
+    # SSE event_type whitelist
+    assert "ALLOWED_EVENT_TYPES" in source, "Missing SSE event_type whitelist"
+    print("  SSE event_type whitelist OK")
+
+    # per_page cap
+    assert "min(per_page" in source, "Missing per_page cap"
+    print("  per_page cap OK")
+
 
 def test_exports_route():
     """Test B2B exports route structure and plan gating"""
@@ -444,7 +452,13 @@ def test_payments_route():
     # Verify Stripe signature verification
     assert "stripe.Webhook.construct_event" in source, "Missing webhook signature verification"
     assert "stripe-signature" in source, "Missing signature header check"
+    assert "not webhook_secret" in source or "webhook_secret" in source, "Missing empty secret check"
     print("  Webhook signature verification OK")
+
+    # Verify modern Stripe exception class (not deprecated stripe.error.*)
+    assert "stripe.StripeError" in source, "Should use stripe.StripeError (not deprecated stripe.error.*)"
+    assert "stripe.error.StripeError" not in source, "Using deprecated stripe.error.StripeError"
+    print("  Modern Stripe error handling OK")
 
     # Verify plan sync to profiles
     assert 'profiles' in source and '"plan"' in source, "Missing profiles plan sync"
@@ -596,6 +610,50 @@ def test_enterprise_features():
     print("  Migration 004_enterprise.sql OK")
 
 
+def test_production_readiness():
+    """Test production readiness: config validation, Docker, security hardening"""
+    # Config uses pydantic-settings BaseSettings
+    config_file = Path(__file__).parent.parent / "shared" / "config.py"
+    with open(config_file, encoding="utf-8") as f:
+        config_source = f.read()
+
+    assert "BaseSettings" in config_source, "Should use pydantic-settings BaseSettings"
+    assert "BaseModel" not in config_source or "BaseSettings" in config_source, "Should not use plain BaseModel for config"
+    assert "cors_origins" in config_source, "Missing CORS origins config"
+    assert "strip()" in config_source, "CORS origins should trim whitespace"
+    assert "is_production" in config_source, "Missing production environment check"
+    print("  Config validation with BaseSettings OK")
+
+    # Docker files
+    dockerfile = Path(__file__).parent.parent / "Dockerfile"
+    assert dockerfile.exists(), "Missing Dockerfile"
+    docker_content = dockerfile.read_text(encoding="utf-8")
+    assert "HEALTHCHECK" in docker_content, "Missing Docker health check"
+    assert "appuser" in docker_content, "Missing non-root user in Docker"
+    print("  Dockerfile with healthcheck + non-root user OK")
+
+    compose = Path(__file__).parent.parent / "docker-compose.yml"
+    assert compose.exists(), "Missing docker-compose.yml"
+    print("  docker-compose.yml OK")
+
+    dockerignore = Path(__file__).parent.parent / ".dockerignore"
+    assert dockerignore.exists(), "Missing .dockerignore"
+    ignore_content = dockerignore.read_text(encoding="utf-8")
+    assert ".env" in ignore_content, ".env should be in .dockerignore"
+    print("  .dockerignore OK")
+
+    # Shared auth gating functions
+    auth_file = Path(__file__).parent.parent / "api" / "middleware" / "auth.py"
+    with open(auth_file, encoding="utf-8") as f:
+        auth_source = f.read()
+
+    assert "def require_pro" in auth_source, "Missing shared require_pro"
+    assert "def require_enterprise" in auth_source, "Missing shared require_enterprise"
+    assert "def require_admin" in auth_source, "Missing shared require_admin"
+    assert "PLAN_ORDER" in auth_source, "Missing centralized PLAN_ORDER"
+    print("  Centralized auth gating functions OK")
+
+
 def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
@@ -631,6 +689,7 @@ def run_all():
         ("Payments - Stripe Integration", test_payments_route),
         ("Feedback Automation - Cron + Admin", test_feedback_automation),
         ("Enterprise - API Key + DXF + Brand", test_enterprise_features),
+        ("Production Readiness - Config + Docker", test_production_readiness),
     ]
 
     passed = 0

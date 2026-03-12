@@ -122,6 +122,7 @@ async def list_orders(
     user: CurrentUser = Depends(get_current_user),
 ):
     """내 주문 목록 조회"""
+    per_page = min(per_page, 100)
     client = get_service_client()
 
     query = (
@@ -267,7 +268,7 @@ async def get_order_timeline(
 async def update_order_status(
     order_id: str,
     body: OrderStatusUpdate,
-    background: BackgroundTasks = BackgroundTasks(),
+    background: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
     """주문 상태 변경 (유효 전이만 허용) + 운영 에이전트 트리거"""
@@ -320,7 +321,7 @@ async def update_order_status(
 async def record_payment(
     order_id: str,
     body: PaymentRecord,
-    background: BackgroundTasks = BackgroundTasks(),
+    background: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
     """결제 기록 + 자동 상태 전이 + 운영 이벤트 발행"""
@@ -393,7 +394,7 @@ async def record_payment(
 async def create_as_ticket(
     order_id: str,
     body: ASRequest,
-    background: BackgroundTasks = BackgroundTasks(),
+    background: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
     """A/S 접수 → 운영 에이전트 자동 처리"""
@@ -439,6 +440,12 @@ async def create_as_ticket(
 # ===== 운영 이벤트 스트림 =====
 
 
+ALLOWED_EVENT_TYPES = {
+    "status_check", "schedule_update", "payment_summary",
+    "as_status", "manufacturing_status", "installation_status",
+}
+
+
 @router.get("/{order_id}/ops-stream")
 async def ops_event_stream(
     order_id: str,
@@ -446,6 +453,9 @@ async def ops_event_stream(
     user: CurrentUser = Depends(get_current_user),
 ):
     """운영 에이전트 처리 결과를 SSE로 스트리밍"""
+    if event_type not in ALLOWED_EVENT_TYPES:
+        raise HTTPException(400, f"허용되지 않은 이벤트 유형입니다. 가능: {sorted(ALLOWED_EVENT_TYPES)}")
+
     from agents.operations.orchestrator import OrderEvent, handle_operations_event
 
     client = get_service_client()

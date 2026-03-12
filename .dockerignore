@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+node_modules
+mcp-server/node_modules
+mcp-server/dist
+n8n/
+docs/
+screenshot/
+cowork/
+*.md
+.claude/

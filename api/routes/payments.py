@@ -17,14 +17,11 @@ router = APIRouter(prefix="/payments", tags=["Payments"])
 
 stripe.api_key = settings.stripe_secret_key
 
-# Stripe Price IDs (환경변수로 관리, 개발 시 기본값)
 STRIPE_PRICES = {
-    "basic": settings.stripe_price_basic if hasattr(settings, "stripe_price_basic") else "",
-    "pro": settings.stripe_price_pro if hasattr(settings, "stripe_price_pro") else "",
-    "enterprise": settings.stripe_price_enterprise if hasattr(settings, "stripe_price_enterprise") else "",
+    "basic": settings.stripe_price_basic,
+    "pro": settings.stripe_price_pro,
+    "enterprise": settings.stripe_price_enterprise,
 }
-
-PLAN_ORDER = {"free": 0, "basic": 1, "pro": 2, "enterprise": 3}
 
 
 class CheckoutRequest(BaseModel):
@@ -95,7 +92,6 @@ async def create_checkout_session(
     )
     customer_id = sub.data[0]["stripe_customer_id"] if sub.data and sub.data[0].get("stripe_customer_id") else None
 
-    # Checkout 세션 생성
     session_params = {
         "mode": "subscription",
         "payment_method_types": ["card"],
@@ -113,7 +109,7 @@ async def create_checkout_session(
 
     try:
         session = stripe.checkout.Session.create(**session_params)
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe checkout error: {e}")
         raise HTTPException(500, "결제 세션 생성에 실패했습니다.")
 
@@ -156,22 +152,19 @@ async def change_plan(
         raise HTTPException(500, f"Stripe Price ID가 설정되지 않았습니다: {body.plan}")
 
     try:
-        # 현재 구독의 item 조회
         stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
         item_id = stripe_sub["items"]["data"][0]["id"]
 
-        # 플랜 변경 (proration 자동 적용)
         stripe.Subscription.modify(
             stripe_sub_id,
             items=[{"id": item_id, "price": new_price_id}],
             proration_behavior="create_prorations",
             metadata={"user_id": user.id, "plan": body.plan},
         )
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe plan change error: {e}")
         raise HTTPException(500, "플랜 변경에 실패했습니다.")
 
-    # DB 업데이트 (webhook에서도 처리하지만 즉시 반영)
     client.table("subscriptions").update({
         "plan": body.plan,
     }).eq("id", sub.data[0]["id"]).execute()
@@ -210,12 +203,11 @@ async def cancel_subscription(
         raise HTTPException(400, "활성 구독이 없습니다.")
 
     try:
-        # 즉시 취소가 아닌 기간 만료 시 취소
         stripe.Subscription.modify(
             sub.data[0]["stripe_subscription_id"],
             cancel_at_period_end=True,
         )
-    except stripe.error.StripeError as e:
+    except stripe.StripeError as e:
         logger.error(f"Stripe cancel error: {e}")
         raise HTTPException(500, "구독 취소에 실패했습니다.")
 
@@ -235,11 +227,15 @@ async def stripe_webhook(request: Request):
     """Stripe 이벤트 수신 — 구독 상태 동기화"""
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
-    webhook_secret = settings.stripe_webhook_secret if hasattr(settings, "stripe_webhook_secret") else ""
+    webhook_secret = settings.stripe_webhook_secret
+
+    if not webhook_secret:
+        logger.error("STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(500, "Webhook secret not configured")
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-    except (ValueError, stripe.error.SignatureVerificationError):
+    except (ValueError, stripe.SignatureVerificationError):
         raise HTTPException(400, "Invalid webhook signature")
 
     event_type = event["type"]
@@ -270,7 +266,6 @@ def _handle_checkout_completed(client, session):
         logger.warning("Checkout completed without user_id in metadata")
         return
 
-    # Stripe 구독 상세 조회
     stripe_sub_id = session.get("subscription")
     stripe_customer_id = session.get("customer")
 
@@ -290,7 +285,6 @@ def _handle_checkout_completed(client, session):
         except Exception:
             pass
 
-    # 구독 upsert
     existing = (
         client.table("subscriptions")
         .select("id")
@@ -305,7 +299,6 @@ def _handle_checkout_completed(client, session):
     else:
         client.table("subscriptions").insert(sub_data).execute()
 
-    # 프로필 플랜 업데이트
     client.table("profiles").update({"plan": plan}).eq("id", user_id).execute()
     logger.info(f"Checkout completed: user={user_id}, plan={plan}")
 
@@ -313,7 +306,7 @@ def _handle_checkout_completed(client, session):
 def _handle_subscription_updated(client, subscription):
     """구독 상태 변경 동기화"""
     stripe_sub_id = subscription.get("id")
-    status = subscription.get("status")  # active, past_due, canceled, etc.
+    status = subscription.get("status")
     plan = subscription.get("metadata", {}).get("plan")
 
     sub = (
