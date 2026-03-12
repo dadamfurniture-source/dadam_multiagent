@@ -415,11 +415,13 @@ def test_exports_route():
     assert "text/csv" in source, "Missing CSV media type"
     print("  Download headers OK")
 
-    # Verify BOM generation logic
+    # Verify BOM generation logic (deduplicated)
+    assert "_build_bom" in source, "Missing shared _build_bom helper"
+    assert "_get_layout_json" in source, "Missing shared _get_layout_json helper"
     assert "18T PB" in source, "Missing PB material spec in BOM"
     assert "9T MDF" in source, "Missing MDF material spec in BOM"
     assert "edge_banding" in source, "Missing edge banding calculation"
-    print("  BOM material specs OK")
+    print("  BOM material specs (deduplicated) OK")
 
 
 def test_payments_route():
@@ -652,6 +654,58 @@ def test_production_readiness():
     assert "def require_admin" in auth_source, "Missing shared require_admin"
     assert "PLAN_ORDER" in auth_source, "Missing centralized PLAN_ORDER"
     print("  Centralized auth gating functions OK")
+
+    # Middleware stack
+    main_file = Path(__file__).parent.parent / "api" / "main.py"
+    with open(main_file, encoding="utf-8") as f:
+        main_source = f.read()
+
+    assert "RateLimitMiddleware" in main_source, "Missing rate limit middleware"
+    assert "RequestLoggingMiddleware" in main_source, "Missing logging middleware"
+    assert "register_error_handlers" in main_source, "Missing error handler registration"
+    print("  Middleware stack (rate limit + logging + error handler) OK")
+
+    # Rate limit middleware file
+    rl_file = Path(__file__).parent.parent / "api" / "middleware" / "rate_limit.py"
+    assert rl_file.exists(), "Missing rate_limit.py"
+    with open(rl_file, encoding="utf-8") as f:
+        rl_source = f.read()
+    assert "429" in rl_source, "Missing 429 status code in rate limiter"
+    assert "X-RateLimit" in rl_source, "Missing rate limit headers"
+    assert "/api/v1/payments/webhook" in rl_source, "Missing webhook-specific rate limit"
+    print("  Rate limiting with path-based limits OK")
+
+    # Error handler
+    eh_file = Path(__file__).parent.parent / "api" / "middleware" / "error_handler.py"
+    assert eh_file.exists(), "Missing error_handler.py"
+    with open(eh_file, encoding="utf-8") as f:
+        eh_source = f.read()
+    assert "RequestValidationError" in eh_source, "Missing validation error handler"
+    assert '"success": False' in eh_source, "Missing consistent error format"
+    print("  Structured error responses OK")
+
+    # Request logging
+    log_file = Path(__file__).parent.parent / "api" / "middleware" / "logging_mw.py"
+    assert log_file.exists(), "Missing logging_mw.py"
+    with open(log_file, encoding="utf-8") as f:
+        log_source = f.read()
+    assert "X-Response-Time" in log_source, "Missing response time header"
+    assert "perf_counter" in log_source, "Missing performance timing"
+    print("  Request/response logging OK")
+
+    # CORS explicit methods (no more wildcard)
+    assert '["*"]' not in main_source.split("allow_methods")[1].split(")")[0] if "allow_methods" in main_source else True, \
+        "CORS should use explicit methods, not wildcard"
+    print("  CORS explicit methods OK")
+
+    # CI/CD pipeline
+    ci_file = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"
+    assert ci_file.exists(), "Missing CI/CD pipeline"
+    ci_content = ci_file.read_text(encoding="utf-8")
+    assert "ruff" in ci_content, "Missing lint step in CI"
+    assert "test_pipeline_e2e" in ci_content, "Missing test step in CI"
+    assert "docker" in ci_content.lower(), "Missing Docker build step in CI"
+    print("  CI/CD pipeline (lint + test + Docker) OK")
 
 
 def test_migration_files():

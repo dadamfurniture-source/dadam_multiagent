@@ -1,5 +1,6 @@
 """다담 SaaS FastAPI 서버"""
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -8,17 +9,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from api.middleware.error_handler import register_error_handlers
+from api.middleware.logging_mw import RequestLoggingMiddleware
+from api.middleware.rate_limit import RateLimitMiddleware
 from api.routes import accounting, admin, enterprise, exports, feedback, orders, payments, projects
 from shared.config import settings
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("다담 SaaS API 서버 시작")
+    logging.getLogger(__name__).info("다담 SaaS API 서버 시작 (env=%s)", settings.environment)
     yield
-    print("다담 SaaS API 서버 종료")
+    logging.getLogger(__name__).info("다담 SaaS API 서버 종료")
 
 
 app = FastAPI(
@@ -28,13 +37,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# 미들웨어 (역순으로 등록 = 먼저 등록한 것이 바깥 레이어)
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key", "stripe-signature"],
 )
+
+# 글로벌 에러 핸들러
+register_error_handlers(app)
 
 # 라우터 등록
 app.include_router(projects.router, prefix="/api/v1")

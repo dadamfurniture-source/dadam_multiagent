@@ -75,17 +75,8 @@ async def export_drawing_svg(
     """상세설계 SVG 도면 다운로드 (Pro+)"""
     require_pro(user)
     data = _get_project_data(project_id, user.id)
+    layout_json = _get_layout_json(data)
 
-    layout_data = data["layout"]
-    if not layout_data:
-        raise HTTPException(404, "레이아웃 데이터가 없습니다. 시뮬레이션을 먼저 실행하세요.")
-
-    # layout JSON에서 모듈 정보 추출
-    layout_json = layout_data.get("layout_json") or layout_data
-    if isinstance(layout_json, str):
-        layout_json = json_mod.loads(layout_json)
-
-    # Import drawing helper (내부 함수 직접 호출)
     from agents.tools.drawing_tools import _generate_front_elevation
 
     svg = _generate_front_elevation(layout_json)
@@ -102,32 +93,16 @@ async def export_drawing_svg(
     )
 
 
-# ===== BOM 자재 명세서 =====
+# ===== BOM 공통 로직 =====
 
 
-@router.get("/{project_id}/bom.json", response_model=APIResponse)
-async def export_bom_json(
-    project_id: str,
-    user: CurrentUser = Depends(get_current_user),
-):
-    """BOM 자재 명세서 JSON (Pro+)"""
-    require_pro(user)
-    data = _get_project_data(project_id, user.id)
-
-    layout_data = data["layout"]
-    if not layout_data:
-        raise HTTPException(404, "레이아웃 데이터가 없습니다.")
-
-    layout_json = layout_data.get("layout_json") or layout_data
-    if isinstance(layout_json, str):
-        layout_json = json_mod.loads(layout_json)
-
+def _build_bom(layout_json: dict) -> list[dict]:
+    """레이아웃 JSON에서 모듈별 BOM 부품 리스트 생성"""
     modules = layout_json.get("modules", [])
     specs = layout_json.get("cabinet_specs", {})
     depth = specs.get("depth_mm", 580)
 
     bom_items = []
-    total_parts = 0
     for i, mod in enumerate(modules):
         w = mod.get("width_mm", 450)
         h = specs.get("lower_height_mm", 870)
@@ -150,7 +125,6 @@ async def export_bom_json(
         if "sink_bowl" in features:
             parts.append({"name": "Sink cutout reinforcement", "size": f"{w-100}x{depth-100}mm", "qty": 1})
 
-        total_parts += sum(p["qty"] for p in parts)
         bom_items.append({
             "module_index": i + 1,
             "type": mod.get("type", "base_cabinet"),
@@ -159,7 +133,36 @@ async def export_bom_json(
             "parts": parts,
         })
 
-    # Edge banding summary
+    return bom_items
+
+
+def _get_layout_json(data: dict) -> dict:
+    """프로젝트 데이터에서 레이아웃 JSON 추출"""
+    layout_data = data["layout"]
+    if not layout_data:
+        raise HTTPException(404, "레이아웃 데이터가 없습니다.")
+
+    layout_json = layout_data.get("layout_json") or layout_data
+    if isinstance(layout_json, str):
+        layout_json = json_mod.loads(layout_json)
+    return layout_json
+
+
+# ===== BOM 자재 명세서 =====
+
+
+@router.get("/{project_id}/bom.json", response_model=APIResponse)
+async def export_bom_json(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """BOM 자재 명세서 JSON (Pro+)"""
+    require_pro(user)
+    data = _get_project_data(project_id, user.id)
+    layout_json = _get_layout_json(data)
+    bom_items = _build_bom(layout_json)
+
+    total_parts = sum(sum(p["qty"] for p in m["parts"]) for m in bom_items)
     total_edge_1mm = sum(m["width_mm"] * 2 for m in bom_items)
     total_edge_04mm = sum(m["width_mm"] * 4 for m in bom_items)
 
@@ -189,40 +192,13 @@ async def export_bom_csv(
     """BOM 자재 명세서 CSV 다운로드 (Pro+)"""
     require_pro(user)
     data = _get_project_data(project_id, user.id)
-
-    layout_data = data["layout"]
-    if not layout_data:
-        raise HTTPException(404, "레이아웃 데이터가 없습니다.")
-
-    layout_json = layout_data.get("layout_json") or layout_data
-    if isinstance(layout_json, str):
-        layout_json = json_mod.loads(layout_json)
-
-    modules = layout_json.get("modules", [])
-    specs = layout_json.get("cabinet_specs", {})
-    depth = specs.get("depth_mm", 580)
+    layout_json = _get_layout_json(data)
+    bom_items = _build_bom(layout_json)
 
     lines = ["Module,Type,Width(mm),Part,Size,Qty"]
-    for i, mod in enumerate(modules):
-        w = mod.get("width_mm", 450)
-        h = specs.get("lower_height_mm", 870)
-        mod_type = mod.get("type", "base_cabinet")
-        door_count = mod.get("door_count", 1)
-        door_h = h - specs.get("toe_kick_mm", 150)
-        door_w = w // door_count
-
-        parts = [
-            ("Side panel 18T PB", f"{depth}x{h}", 2),
-            ("Top panel 18T PB", f"{w}x{depth}", 1),
-            ("Bottom panel 18T PB", f"{w}x{depth}", 1),
-            ("Back panel 9T MDF", f"{w}x{h}", 1),
-            ("Shelf 18T PB", f"{w-36}x{depth-20}", 1),
-            ("Door panel", f"{door_w}x{door_h}", door_count),
-            ("Hinge 35mm", "soft-close", door_count * 2),
-            ("Handle", "128mm", door_count),
-        ]
-        for name, size, qty in parts:
-            lines.append(f"{i+1},{mod_type},{w},{name},{size},{qty}")
+    for m in bom_items:
+        for p in m["parts"]:
+            lines.append(f"{m['module_index']},{m['type']},{m['width_mm']},{p['name']},{p['size']},{p['qty']}")
 
     csv_content = "\n".join(lines)
     project_name = data["project"]["name"].replace(" ", "_")
