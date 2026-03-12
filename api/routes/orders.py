@@ -1,6 +1,9 @@
-"""주문/운영 API — 상담~설치~A/S 생명주기"""
+"""주문/운영 API — 상담~설치~A/S 생명주기 + 운영 에이전트 트리거"""
+
+import json as json_mod
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from api.middleware.auth import CurrentUser, get_current_user
@@ -8,6 +11,24 @@ from api.schemas.common import APIResponse
 from shared.supabase_client import get_service_client
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+# Valid status transitions (from → [allowed to states])
+VALID_TRANSITIONS = {
+    "consulting": ["quoted"],
+    "quoted": ["contracted", "consulting"],
+    "contracted": ["ordering"],
+    "ordering": ["manufacturing"],
+    "manufacturing": ["manufactured"],
+    "manufactured": ["installing"],
+    "installing": ["installed"],
+    "installed": ["settled"],
+}
+
+PAYMENT_STAGES = {
+    "contract_deposit": {"from": "quoted", "to": "contracted", "ratio": 0.3},
+    "interim": {"from": "manufacturing", "to": None, "ratio": 0.4},
+    "balance": {"from": "installed", "to": "settled", "ratio": 0.3},
+}
 
 
 class OrderCreateRequest(BaseModel):
@@ -20,6 +41,19 @@ class OrderCreateRequest(BaseModel):
 class OrderStatusUpdate(BaseModel):
     status: str
     reason: str | None = None
+
+
+class PaymentRecord(BaseModel):
+    payment_type: str  # contract_deposit, interim, balance
+    amount: int
+    payment_method: str | None = "bank_transfer"
+    notes: str | None = None
+
+
+class ASRequest(BaseModel):
+    type: str  # product_defect, installation_defect, customer_fault, natural_wear
+    description: str
+    photos: list[str] = []
 
 
 # ===== 주문 CRUD =====
