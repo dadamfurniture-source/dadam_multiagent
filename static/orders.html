@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주문 관리 - 다담 AI</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .order-card { border-left: 4px solid var(--border); padding: 16px; margin-bottom: 12px; background: var(--surface); border-radius: 0 var(--radius) var(--radius) 0; box-shadow: var(--shadow); cursor: pointer; transition: transform 0.1s; }
+    .order-card:hover { transform: translateX(4px); }
+    .order-card.status-consulting { border-left-color: #8b5cf6; }
+    .order-card.status-quoted { border-left-color: #3b82f6; }
+    .order-card.status-contracted { border-left-color: #10b981; }
+    .order-card.status-ordering, .order-card.status-manufacturing { border-left-color: #f59e0b; }
+    .order-card.status-manufactured, .order-card.status-installing { border-left-color: #f97316; }
+    .order-card.status-installed, .order-card.status-settled { border-left-color: #22c55e; }
+    .order-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .order-amount { font-size: 18px; font-weight: 700; color: var(--text); }
+    .status-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .status-badge.consulting { background: #ede9fe; color: #7c3aed; }
+    .status-badge.quoted { background: #dbeafe; color: #2563eb; }
+    .status-badge.contracted { background: #d1fae5; color: #059669; }
+    .status-badge.ordering, .status-badge.manufacturing { background: #fef3c7; color: #d97706; }
+    .status-badge.manufactured, .status-badge.installing { background: #ffedd5; color: #ea580c; }
+    .status-badge.installed, .status-badge.settled { background: #dcfce7; color: #16a34a; }
+    .timeline-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .timeline-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--primary); margin-top: 4px; flex-shrink: 0; }
+    .timeline-dot.schedule { background: var(--warning); }
+    .payment-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+    .payment-fill { height: 100%; background: var(--success); border-radius: 4px; transition: width 0.3s; }
+    .tab-group { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 2px solid var(--border); }
+    .tab { padding: 8px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; color: var(--text-secondary); font-weight: 500; }
+    .tab.active { border-bottom-color: var(--primary); color: var(--primary); }
+    .filter-group { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-btn { padding: 4px 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); cursor: pointer; font-size: 13px; }
+    .filter-btn.active { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">다담 AI</a>
+      <nav class="nav">
+        <a href="/new.html">새 프로젝트</a>
+        <a href="/projects.html">내 프로젝트</a>
+        <a href="/orders.html" style="color:var(--primary);font-weight:600">주문 관리</a>
+      </nav>
+    </div>
+  </header>
+
+  <main style="padding:40px 0">
+    <div class="container" style="max-width:900px">
+      <h1 style="margin-bottom:8px">주문 관리</h1>
+      <p style="color:var(--text-secondary);margin-bottom:24px">상담부터 설치, A/S까지 전체 주문 흐름을 관리합니다.</p>
+
+      <!-- Status Filter -->
+      <div class="filter-group" id="status-filter">
+        <button class="filter-btn active" data-status="">전체</button>
+        <button class="filter-btn" data-status="consulting">상담중</button>
+        <button class="filter-btn" data-status="quoted">견적완료</button>
+        <button class="filter-btn" data-status="contracted">계약</button>
+        <button class="filter-btn" data-status="manufacturing">제작중</button>
+        <button class="filter-btn" data-status="installed">설치완료</button>
+        <button class="filter-btn" data-status="settled">정산</button>
+      </div>
+
+      <!-- Order List -->
+      <div id="order-list">
+        <p style="text-align:center;color:var(--text-secondary);padding:48px">로딩 중...</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Order Detail Modal -->
+  <div id="order-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;overflow-y:auto">
+    <div style="max-width:700px;margin:40px auto;background:var(--surface);border-radius:var(--radius);padding:24px;position:relative">
+      <button onclick="closeModal()" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:20px;cursor:pointer">&times;</button>
+      <div id="order-detail"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+  <script>
+    const STATUS_LABELS = {
+      consulting: '상담중', quoted: '견적완료', contracted: '계약',
+      ordering: '발주', manufacturing: '제작중', manufactured: '제작완료',
+      installing: '설치중', installed: '설치완료', settled: '정산완료'
+    };
+
+    let currentFilter = '';
+
+    // Filter buttons
+    document.querySelectorAll('#status-filter .filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#status-filter .filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.dataset.status;
+        loadOrders();
+      });
+    });
+
+    async function loadOrders() {
+      const list = document.getElementById('order-list');
+      try {
+        const url = currentFilter
+          ? `/api/v1/orders?status=${currentFilter}`
+          : '/api/v1/orders';
+        const res = await fetch(url, { headers: authHeaders() });
+        const json = await res.json();
+        const items = json.data?.items || [];
+
+        if (!items.length) {
+          list.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:48px">주문이 없습니다.</p>';
+          return;
+        }
+
+        list.innerHTML = items.map(o => `
+          <div class="order-card status-${o.status}" onclick="showOrder('${o.id}')">
+            <div class="order-header">
+              <div>
+                <strong>${o.projects?.name || '프로젝트'}</strong>
+                <span style="color:var(--text-secondary);margin-left:8px;font-size:13px">${o.projects?.category || ''}</span>
+              </div>
+              <span class="status-badge ${o.status}">${STATUS_LABELS[o.status] || o.status}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="order-amount">${(o.contract_amount || 0).toLocaleString()}원</span>
+              <span style="font-size:13px;color:var(--text-secondary)">${new Date(o.created_at).toLocaleDateString('ko')}</span>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        list.innerHTML = '<p style="text-align:center;color:var(--error);padding:48px">주문 목록을 불러올 수 없습니다.</p>';
+      }
+    }
+
+    async function showOrder(orderId) {
+      const detail = document.getElementById('order-detail');
+      document.getElementById('order-modal').style.display = 'block';
+      detail.innerHTML = '<p style="text-align:center;padding:24px">로딩 중...</p>';
+
+      try {
+        const res = await fetch(`/api/v1/orders/${orderId}`, { headers: authHeaders() });
+        const json = await res.json();
+        const d = json.data;
+        const o = d.order;
+
+        const paidAmount = (d.history || []).filter(h => h.to_status === 'contracted').length > 0
+          ? o.contract_amount * 0.3 : 0;
+        const paidPercent = o.contract_amount ? Math.round(paidAmount / o.contract_amount * 100) : 0;
+
+        detail.innerHTML = `
+          <h2 style="margin-bottom:4px">${o.projects?.name || '주문 상세'}</h2>
+          <span class="status-badge ${o.status}" style="margin-bottom:16px;display:inline-block">${STATUS_LABELS[o.status] || o.status}</span>
+
+          <div class="card" style="margin:16px 0">
+            <h3>결제 현황</h3>
+            <div style="display:flex;justify-content:space-between;margin-top:8px">
+              <span>계약금액: ${(o.contract_amount || 0).toLocaleString()}원</span>
+              <span style="color:var(--success)">${paidPercent}% 수금</span>
+            </div>
+            <div class="payment-bar"><div class="payment-fill" style="width:${paidPercent}%"></div></div>
+          </div>
+
+          <h3 style="margin:16px 0 8px">타임라인</h3>
+          ${(d.history || []).map(h => `
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+              <div>
+                <strong>${STATUS_LABELS[h.to_status] || h.to_status}</strong>
+                ${h.reason ? `<span style="color:var(--text-secondary)"> - ${h.reason}</span>` : ''}
+                <div style="font-size:12px;color:var(--text-secondary)">${new Date(h.created_at).toLocaleString('ko')}</div>
+              </div>
+            </div>
+          `).join('')}
+
+          ${(d.schedules || []).length ? `
+            <h3 style="margin:16px 0 8px">일정</h3>
+            ${d.schedules.map(s => `
+              <div class="timeline-item">
+                <div class="timeline-dot schedule"></div>
+                <div>
+                  <strong>${s.title}</strong>
+                  <div style="font-size:12px;color:var(--text-secondary)">${new Date(s.scheduled_at).toLocaleString('ko')}</div>
+                </div>
+              </div>
+            `).join('')}
+          ` : ''}
+
+          ${(d.as_tickets || []).length ? `
+            <h3 style="margin:16px 0 8px">A/S</h3>
+            ${d.as_tickets.map(t => `
+              <div class="card" style="margin-bottom:8px;padding:12px">
+                <strong>${t.type}</strong> - ${t.description}
+                <div style="font-size:12px;color:var(--text-secondary)">${t.status}</div>
+              </div>
+            `).join('')}
+          ` : ''}
+        `;
+      } catch (e) {
+        detail.innerHTML = '<p style="color:var(--error)">주문 정보를 불러올 수 없습니다.</p>';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('order-modal').style.display = 'none';
+    }
+
+    function authHeaders() {
+      const token = localStorage.getItem('access_token');
+      return token ? { 'Authorization': `Bearer ${token}` } : {};
+    }
+
+    document.getElementById('order-modal').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) closeModal();
+    });
+
+    loadOrders();
+  </script>
+</body>
+</html>

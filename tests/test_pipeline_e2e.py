@@ -317,6 +317,64 @@ def test_constants_completeness():
     print(f"  {len(CATEGORIES)} categories, {len(PLANS)} plans, {len(STYLES)} styles, {len(LORA_MODELS)} LoRA models OK")
 
 
+def test_orders_state_machine():
+    """Test order lifecycle state transitions and payment stages"""
+    # Parse orders.py to extract VALID_TRANSITIONS and PAYMENT_STAGES
+    orders_file = Path(__file__).parent.parent / "api" / "routes" / "orders.py"
+    with open(orders_file, encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source)
+
+    # Execute assignment nodes to get constants
+    namespace = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in ("VALID_TRANSITIONS", "PAYMENT_STAGES"):
+                    exec(ast.unparse(node), namespace)
+
+    transitions = namespace["VALID_TRANSITIONS"]
+    payments = namespace["PAYMENT_STAGES"]
+
+    # Full lifecycle path exists
+    lifecycle = ["consulting", "quoted", "contracted", "ordering", "manufacturing", "manufactured", "installing", "installed", "settled"]
+    for i in range(len(lifecycle) - 1):
+        frm, to = lifecycle[i], lifecycle[i + 1]
+        assert to in transitions.get(frm, []), f"Missing transition: {frm} -> {to}"
+    print(f"  Full lifecycle path ({len(lifecycle)} states) OK")
+
+    # No state can transition to itself
+    for frm, tos in transitions.items():
+        assert frm not in tos, f"Self-transition found: {frm} -> {frm}"
+    print("  No self-transitions OK")
+
+    # Payment stages map correctly
+    assert len(payments) == 3, f"Expected 3 payment stages, got {len(payments)}"
+    assert payments["contract_deposit"]["ratio"] == 0.3
+    assert payments["interim"]["ratio"] == 0.4
+    assert payments["balance"]["ratio"] == 0.3
+    total_ratio = sum(p["ratio"] for p in payments.values())
+    assert abs(total_ratio - 1.0) < 0.001, f"Payment ratios sum to {total_ratio}, expected 1.0"
+    print("  Payment stages (30/40/30) OK")
+
+    # Verify route endpoints exist
+    route_decorators = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr in ("get", "post", "put", "delete"):
+            route_decorators.append(node.attr)
+
+    assert route_decorators.count("put") >= 1, "Missing PUT endpoint (status update)"
+    assert route_decorators.count("post") >= 3, "Missing POST endpoints (create + payment + AS)"
+    assert route_decorators.count("get") >= 3, "Missing GET endpoints (list + detail + timeline)"
+    print(f"  Route methods: {len(route_decorators)} endpoints OK")
+
+    # Verify BackgroundTasks import for ops event triggers
+    assert "BackgroundTasks" in source, "Missing BackgroundTasks import for async ops events"
+    assert "_fire_ops_event" in source, "Missing _fire_ops_event helper"
+    print("  Background ops event triggers OK")
+
+
 def test_migration_files():
     """Verify migration files exist and have valid SQL"""
     migrations_dir = Path(__file__).parent.parent / "db" / "migrations"
@@ -347,6 +405,7 @@ def run_all():
         ("Operations - Prompt Re-export", test_operations_prompts_reexport),
         ("Constants - Completeness", test_constants_completeness),
         ("Migrations - File Check", test_migration_files),
+        ("Orders - State Machine & Payments", test_orders_state_machine),
     ]
 
     passed = 0
