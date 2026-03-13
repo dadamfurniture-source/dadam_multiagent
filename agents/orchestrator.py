@@ -260,12 +260,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     cleanup_b64 = None
     try:
         cleanup_prompt = (
-            f"Remove all furniture, construction debris, tools, trash, "
-            f"and work materials from this photo. "
-            f"Fix unfinished surfaces: fill gaps, repair rough edges, "
-            f"complete any incomplete wall/floor finishes. "
-            f"Keep original wall tiles and floor exactly. "
-            f"Clean empty space, natural lighting, same perspective."
+            f"Edit this photo: remove furniture, debris, tools, trash. "
+            f"Fix unfinished walls: fill gaps, repair rough edges. "
+            f"CRITICAL: Do NOT change wall tiles, tile pattern, tile color, "
+            f"floor, ceiling, or camera angle. Only remove objects."
         )
         cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
         await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
@@ -293,9 +291,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         placement_note += "No tall cabinets. "
 
     furniture_prompt = (
-        f"Install {style} Korean {category_name} in this photo. "
+        f"Edit the FIRST image: add {style} {category_name} furniture. "
         f"{style_desc} {module_desc}. {placement_note}"
-        f"{IMAGE_RULES}Photorealistic, natural lighting."
+        f"CRITICAL: keep walls, tiles, floor, ceiling EXACTLY as first image. "
+        f"{IMAGE_RULES}Photorealistic."
     )
 
     # 참고 이미지 조회 (style_references 테이블)
@@ -329,27 +328,36 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     except Exception as e:
         logger.warning("Flux LoRA failed (%s), falling back to Gemini for furniture", e)
         try:
+            # 원본(또는 cleanup) 이미지를 첫 번째 이미지로 전달
             base_img = cleanup_b64 or image_b64
-            # 참고 이미지가 있으면 프롬프트에 안내 추가
+            # 참고 이미지는 스타일 가이드로만 사용 (원본 공간과 혼동 방지)
             ref_prompt = furniture_prompt
             if ref_images_b64:
-                ref_prompt = f"Use the reference images as style guide. {furniture_prompt}"
+                ref_prompt = (
+                    f"FIRST image = target space (preserve exactly). "
+                    f"Other images = style reference only. "
+                    f"{furniture_prompt}"
+                )
             furniture_b64 = await _call_gemini_image(ref_prompt, base_img, extra_images=ref_images_b64)
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
             logger.info("Furniture image generated via Gemini (with %d refs)", len(ref_images_b64))
         except Exception as e2:
             logger.error("Furniture generation failed (both LoRA and Gemini): %s", e2)
 
-    # 3c. Correction (Gemini)
+    # 3c. Correction (Gemini) — 원본 이미지를 함께 전달하여 벽면 복원
     corrected_b64 = None
     if furniture_b64:
         try:
             correction_prompt = (
-                f"Adjust furniture to match original space. "
-                f"Keep wall tiles exactly as original. "
-                f"Fix color temperature, shadows for realism. {IMAGE_RULES}"
+                f"FIRST image = furniture result to correct. "
+                f"SECOND image = original space photo. "
+                f"Fix the first image: restore walls, tiles, floor to match "
+                f"the second image EXACTLY. Only keep the furniture. "
+                f"Fix lighting and shadows for realism."
             )
-            corrected_b64 = await _call_gemini_image(correction_prompt, furniture_b64)
+            corrected_b64 = await _call_gemini_image(
+                correction_prompt, furniture_b64, extra_images=[image_b64]
+            )
             await _upload_image(request.project_id, request.user_id, corrected_b64, "corrected")
             logger.info("Correction image generated")
         except Exception as e:
@@ -361,8 +369,9 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         try:
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
             open_prompt = (
-                f"Show all cabinet doors open revealing organized interior. "
-                f"Inside: {contents}. Keep same perspective and lighting."
+                f"Edit this image: open all cabinet doors showing interior. "
+                f"Inside: {contents}. "
+                f"Do NOT change walls, tiles, floor, or perspective."
             )
             open_b64 = await _call_gemini_image(open_prompt, corrected_b64)
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
