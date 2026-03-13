@@ -176,15 +176,15 @@ def _create_furniture_mask(
         wall_layout = space_analysis.get("wall_layout", "straight")
 
     # Category + wall_layout에 따른 마스크 영역 설정
-    # sink: 상부장(top 10%) + 하부장(bottom 92%) = 전체 벽면 커버
+    # sink: 정면 벽 전체를 마스킹 (천장 아래~바닥 위, 옷걸이/잡동사니 포함)
     if category in ("sink", "island"):
         if wall_layout == "straight":
-            # 1자: 상부장+하부장 전체, 좌우 15% 여백
-            mask_region = (0.15, 0.10, 0.85, 0.92)
+            # 1자: 좌우 15% 여백, 상하는 천장(5%)~바닥(95%)까지 넓게
+            mask_region = (0.15, 0.05, 0.85, 0.95)
         elif wall_layout == "L-shape":
-            mask_region = (0.05, 0.10, 0.95, 0.92)
+            mask_region = (0.05, 0.05, 0.95, 0.95)
         else:
-            mask_region = (0.03, 0.10, 0.97, 0.92)
+            mask_region = (0.03, 0.05, 0.97, 0.95)
     elif category in ("closet", "fridge_cabinet", "utility_closet"):
         if wall_layout == "straight":
             mask_region = (0.10, 0.05, 0.90, 0.92)
@@ -203,10 +203,9 @@ def _create_furniture_mask(
         wall_h = wall_dims.get("height", 2400)
 
         if category in ("sink", "island"):
-            # 상부장(720mm) + 하부장(870mm) + 몰딩(60mm) = ~1650mm
-            furniture_h_mm = 1700
-            top_ratio = 1.0 - (furniture_h_mm / wall_h) - 0.03
-            mask_region = (mask_region[0], max(0.08, top_ratio), mask_region[2], mask_region[3])
+            # 전체 벽면 커버 (상부장+하부장+옷걸이 등 잡동사니 포함)
+            # space analysis 기반 미세 조정은 하지 않음 — 넓은 마스크가 더 나은 결과
+            pass
         elif category in ("closet", "fridge_cabinet"):
             furniture_h_mm = 2200
             top_ratio = 1.0 - (furniture_h_mm / wall_h)
