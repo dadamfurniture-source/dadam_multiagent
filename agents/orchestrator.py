@@ -254,9 +254,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     yield {"type": "progress", "content": "layout design complete"}
 
-    # ─── 3. 이미지 생성 (마스크 기반 인페인팅) ───
-    # 파이프라인: Mask → Inpaint(Replicate) → Open(Gemini)
-    # 마스크 영역만 AI가 생성, 나머지는 원본 픽셀 100% 보존
+    # ─── 3. 이미지 생성 (Cleanup → Mask → Inpaint → Open) ───
     yield {"type": "progress", "content": "image generation started"}
     _update_stage(request.project_id, "image_gen")
 
@@ -290,29 +288,45 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             placement_note = ". ".join(parts) + ". "
         placement_note += "No tall cabinets. "
 
-    # 3a. 마스크 생성 (가구 배치 영역)
+    # 3a. Cleanup (Gemini) — 기존 가구/잡동사니/사람 제거
+    cleanup_b64 = None
+    try:
+        cleanup_prompt = (
+            "Remove ALL furniture, appliances, objects, people, clothes, "
+            "construction debris from this photo. Show ONLY the clean empty room "
+            "with bare walls, tiles, and floor. "
+            "PRESERVE wall color, tile pattern, lighting, perspective EXACTLY."
+        )
+        cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
+        await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
+        logger.info("Cleanup complete — empty room generated")
+    except Exception as e:
+        logger.warning("Cleanup failed, using original image: %s", e)
+        cleanup_b64 = image_b64  # fallback: 원본 사용
+
+    # 인페인팅 입력은 cleanup 결과 (깨끗한 빈 공간)
+    inpaint_source = cleanup_b64 or image_b64
+
+    # 3b. 마스크 생성 (가구 배치 영역)
     try:
         mask_b64 = _create_furniture_mask(
-            image_b64, request.category, space_result
+            inpaint_source, request.category, space_result
         )
-        # 마스크는 디버그용으로만 저장 (generated_images에 mask type 없음)
         logger.info("Furniture mask generated for category: %s", request.category)
     except Exception as e:
         logger.error("Mask generation failed: %s", e)
         mask_b64 = None
 
-    # 3b. 인페인팅 (Replicate) — 원본 벽/바닥 픽셀 보존
+    # 3c. 인페인팅 (Replicate) — cleanup된 이미지 위에 가구 배치
     furniture_b64 = None
     inpaint_prompt = (
         f"{layout_desc}{style} style {category_name}, {style_desc} "
         f"{module_desc}. {placement_note}"
         f"Photorealistic interior, natural lighting. {IMAGE_RULES}"
     )
-    # 프롬프트 길이 제한
     if len(inpaint_prompt) > 500:
         inpaint_prompt = inpaint_prompt[:497] + "..."
 
-    # straight 레이아웃에 대한 네거티브 프롬프트
     neg_prompt = ""
     if wall_layout == "straight":
         neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled, two-wall, side wall cabinets"
@@ -320,7 +334,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     if mask_b64:
         try:
             furniture_b64 = await _call_replicate_inpaint(
-                image_b64, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
+                inpaint_source, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
             logger.info("Furniture inpainted via Replicate (walls preserved)")
@@ -336,7 +350,6 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             f"CRITICAL: keep walls, tiles, floor, ceiling EXACTLY. "
             f"{IMAGE_RULES}Photorealistic."
         )
-        # 참고 이미지 조회 (style_references 테이블)
         ref_images_b64 = []
         try:
             refs = (
@@ -360,7 +373,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
         try:
             furniture_b64 = await _call_gemini_image(
-                furniture_prompt, image_b64, extra_images=ref_images_b64 or None
+                furniture_prompt, inpaint_source, extra_images=ref_images_b64 or None
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
             logger.info("Furniture generated via Gemini fallback")
