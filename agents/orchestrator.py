@@ -260,9 +260,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     cleanup_b64 = None
     try:
         cleanup_prompt = (
-            f"Remove all existing furniture and objects from this photo. "
-            f"Show only clean empty space with bare walls and floor. "
-            f"Preserve original wall tiles, lighting and perspective exactly."
+            f"Remove all furniture, construction debris, tools, trash, "
+            f"and work materials from this photo. "
+            f"Fix unfinished surfaces: fill gaps, repair rough edges, "
+            f"complete any incomplete wall/floor finishes. "
+            f"Keep original wall tiles and floor exactly. "
+            f"Clean empty space, natural lighting, same perspective."
         )
         cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
         await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
@@ -277,19 +280,21 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     style_desc = STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
     module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
 
-    # 배기덕트 위치에 가스레인지/인덕션 배치 지시
-    cooktop_note = ""
-    if cooktop_pos and request.category == "sink":
-        cooktop_note = f"Place cooktop/induction at {cooktop_pos}mm from left. "
-
-    # 키큰장 제한 (싱크대에서는 키큰장 금지)
-    tall_cabinet_note = ""
+    # 배관 위치 기반 배치 지시 (싱크대 카테고리)
+    placement_note = ""
     if request.category == "sink":
-        tall_cabinet_note = "No tall cabinets. "
+        parts = []
+        if sink_pos:
+            parts.append(f"Sink bowl at {sink_pos}mm from left wall")
+        if cooktop_pos:
+            parts.append(f"cooktop/induction at {cooktop_pos}mm from left wall")
+        if parts:
+            placement_note = ". ".join(parts) + ". "
+        placement_note += "No tall cabinets. "
 
     furniture_prompt = (
         f"Install {style} Korean {category_name} in this photo. "
-        f"{style_desc} {module_desc}. {cooktop_note}{tall_cabinet_note}"
+        f"{style_desc} {module_desc}. {placement_note}"
         f"{IMAGE_RULES}Photorealistic, natural lighting."
     )
 
