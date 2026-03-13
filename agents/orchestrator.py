@@ -308,80 +308,73 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         logger.warning("Cleanup generation failed, using original image: %s", e)
         cleanup_b64 = image_b64  # fallback: 원본 사용
 
-    # 인페인팅 입력은 cleanup 결과 (깨끗한 빈 공간)
-    inpaint_source = cleanup_b64 or image_b64
+    # cleanup 결과를 가구 생성 입력으로 사용
+    furniture_source = cleanup_b64 or image_b64
 
-    # 3b. 마스크 생성 (가구 배치 영역)
-    try:
-        mask_b64 = _create_furniture_mask(
-            inpaint_source, request.category, space_result
-        )
-        logger.info("Furniture mask generated for category: %s", request.category)
-    except Exception as e:
-        logger.error("Mask generation failed: %s", e)
-        mask_b64 = None
-
-    # 3c. 인페인팅 (Replicate) — cleanup된 이미지 위에 가구 배치
+    # 3b. Furniture (Gemini) — cleanup 이미지에 가구 배치
     furniture_b64 = None
-    upper_note = "Upper wall cabinets flush with ceiling, lower base cabinets with countertop. "
-    inpaint_prompt = (
-        f"{layout_desc}{style} style {category_name}, {upper_note}"
+    furniture_prompt = (
+        f"Edit this photo: install {layout_desc}{style} style {category_name}. "
+        f"Upper wall cabinets flush with ceiling, lower base cabinets with countertop. "
         f"{style_desc} {module_desc}. {placement_note}"
-        f"Photorealistic interior, natural lighting. {IMAGE_RULES}"
+        f"PRESERVE walls, tiles, floor, ceiling, camera angle EXACTLY. "
+        f"{IMAGE_RULES}Photorealistic interior."
     )
-    if len(inpaint_prompt) > 500:
-        inpaint_prompt = inpaint_prompt[:497] + "..."
+    if len(furniture_prompt) > 500:
+        furniture_prompt = furniture_prompt[:497] + "..."
 
-    neg_prompt = ""
-    if wall_layout == "straight":
-        neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled, two-wall, side wall cabinets"
-
-    if mask_b64:
-        try:
-            furniture_b64 = await _call_replicate_inpaint(
-                inpaint_source, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
-            )
-            await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Furniture inpainted via Replicate (walls preserved)")
-        except Exception as e:
-            logger.warning("Replicate inpainting failed: %s, falling back to Gemini", e)
-
-    # Fallback: Gemini (마스크 실패 또는 인페인팅 실패 시)
-    if not furniture_b64:
-        logger.info("Using Gemini fallback for furniture generation")
-        furniture_prompt = (
-            f"Edit this image: add {layout_desc}{style} {category_name} furniture. "
-            f"{style_desc} {module_desc}. {placement_note}"
-            f"CRITICAL: keep walls, tiles, floor, ceiling EXACTLY. "
-            f"{IMAGE_RULES}Photorealistic."
+    # 참고 이미지 조회 (style_references 테이블)
+    ref_images_b64 = []
+    try:
+        refs = (
+            client.table("style_references")
+            .select("image_url")
+            .eq("category", request.category)
+            .eq("style", style)
+            .eq("is_active", True)
+            .limit(2)
+            .execute()
         )
-        ref_images_b64 = []
-        try:
-            refs = (
-                client.table("style_references")
-                .select("image_url")
-                .eq("category", request.category)
-                .eq("style", style)
-                .eq("is_active", True)
-                .limit(2)
-                .execute()
-            )
-            if refs.data:
-                for ref in refs.data:
-                    try:
-                        ref_b64, _ = await _download_image_b64(ref["image_url"])
-                        ref_images_b64.append(ref_b64)
-                    except Exception:
-                        pass
-        except Exception as e:
-            logger.warning("Failed to load reference images: %s", e)
+        if refs.data:
+            for ref in refs.data:
+                try:
+                    ref_b64, _ = await _download_image_b64(ref["image_url"])
+                    ref_images_b64.append(ref_b64)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning("Failed to load reference images: %s", e)
 
+    try:
+        furniture_b64 = await _call_gemini_image(
+            furniture_prompt, furniture_source, extra_images=ref_images_b64 or None
+        )
+        await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
+        logger.info("Furniture generated via Gemini (cleanup input)")
+    except Exception as e:
+        logger.warning("Gemini furniture failed: %s, trying Replicate inpaint", e)
+
+    # Fallback: Replicate 인페인팅 (Gemini 실패 시)
+    if not furniture_b64:
         try:
-            furniture_b64 = await _call_gemini_image(
-                furniture_prompt, inpaint_source, extra_images=ref_images_b64 or None
+            mask_b64 = _create_furniture_mask(
+                furniture_source, request.category, space_result
+            )
+            neg_prompt = ""
+            if wall_layout == "straight":
+                neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled"
+            inpaint_prompt = (
+                f"{layout_desc}{style} style {category_name}, "
+                f"{module_desc}. {placement_note}"
+                f"Photorealistic interior. {IMAGE_RULES}"
+            )
+            if len(inpaint_prompt) > 500:
+                inpaint_prompt = inpaint_prompt[:497] + "..."
+            furniture_b64 = await _call_replicate_inpaint(
+                furniture_source, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Furniture generated via Gemini fallback")
+            logger.info("Furniture generated via Replicate fallback")
         except Exception as e:
             logger.error("Furniture generation failed (all methods): %s", e)
 
