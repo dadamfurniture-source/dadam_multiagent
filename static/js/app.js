@@ -470,19 +470,24 @@ function displayQuote(quote) {
   if (!quoteEl) return;
   quoteEl.style.display = 'block';
 
-  const items = quote.items_json || quote.items || [];
-  const total = quote.total_price || quote.total || 0;
+  // items_json은 {items, subtotal, countertop, installation, ...} 구조
+  const qData = quote.items_json || quote;
+  const items = qData.items || [];
+  const subtotal = qData.subtotal || quote.subtotal || 0;
+  const countertop = qData.countertop || 0;
+  const installation = qData.installation || quote.installation_fee || 0;
+  const vat = qData.vat || quote.tax_amount || 0;
+  const total = quote.total_price || qData.total || 0;
 
-  let html = '<table class="quote-table"><thead><tr><th>항목</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>';
+  let html = '<table class="quote-table"><thead><tr><th>항목</th><th>금액</th></tr></thead><tbody>';
   items.forEach(item => {
-    html += `<tr>
-      <td>${item.name || item.module}</td>
-      <td>${item.quantity || 1}</td>
-      <td>${(item.unit_price || item.base_price || 0).toLocaleString()}원</td>
-      <td>${(item.total || 0).toLocaleString()}원</td>
-    </tr>`;
+    html += `<tr><td>${item.module || item.name}</td><td>${(item.price || 0).toLocaleString()}원</td></tr>`;
   });
-  html += `<tr class="total-row"><td colspan="3">합계</td><td>${total.toLocaleString()}원</td></tr>`;
+  if (countertop) html += `<tr><td>상판 (인조대리석)</td><td>${countertop.toLocaleString()}원</td></tr>`;
+  if (installation) html += `<tr><td>설치비</td><td>${installation.toLocaleString()}원</td></tr>`;
+  html += `<tr><td>소계</td><td>${(subtotal + countertop + installation).toLocaleString()}원</td></tr>`;
+  html += `<tr><td>부가세 (10%)</td><td>${vat.toLocaleString()}원</td></tr>`;
+  html += `<tr class="total-row"><td><strong>합계</strong></td><td><strong>${total.toLocaleString()}원</strong></td></tr>`;
   html += '</tbody></table>';
 
   quoteEl.innerHTML = `<h3 style="margin-bottom:16px">견적서</h3>${html}`;
