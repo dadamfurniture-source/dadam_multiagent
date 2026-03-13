@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from api.middleware.auth import CurrentUser, get_current_user
@@ -306,16 +306,35 @@ async def run_project(
 @router.get("/{project_id}/stream")
 async def stream_project(
     project_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    token: str | None = Query(None),
 ):
-    """프로젝트 처리 SSE 스트림 — DB 폴링으로 백그라운드 파이프라인 진행 상황 전달"""
+    """프로젝트 처리 SSE 스트림 — DB 폴링으로 백그라운드 파이프라인 진행 상황 전달
+
+    EventSource는 Authorization 헤더를 지원하지 않으므로
+    ?token=xxx 쿼리 파라미터로 인증.
+    """
+    if not token:
+        raise HTTPException(401, "인증이 필요합니다.")
+
+    # 토큰으로 사용자 확인
+    try:
+        client_auth = get_service_client()
+        user_response = client_auth.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(401, "유효하지 않은 토큰입니다.")
+        user_id = user_response.user.id
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(401, "인증 실패")
+
     client = get_service_client()
 
     project = (
         client.table("projects")
         .select("*")
         .eq("id", project_id)
-        .eq("user_id", user.id)
+        .eq("user_id", user_id)
         .single()
         .execute()
     )

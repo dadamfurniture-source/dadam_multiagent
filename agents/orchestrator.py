@@ -40,8 +40,36 @@ class ProjectRequest:
 
 
 async def _download_image_b64(url: str) -> tuple[str, str]:
-    """Download image from URL and return (base64, media_type)."""
+    """Download image from URL and return (base64, media_type).
+
+    Supports both public URLs and Supabase storage paths.
+    For private buckets, uses signed URL via service client.
+    """
     import httpx
+
+    # Supabase private bucket — generate signed URL
+    if "supabase.co/storage/v1/object" in url:
+        try:
+            client = get_service_client()
+            # Extract path from URL: .../object/public/originals/user_id/project_id/file
+            # or .../object/originals/...
+            path_part = url.split("/object/")[1] if "/object/" in url else ""
+            # Remove "public/" prefix if present
+            if path_part.startswith("public/"):
+                path_part = path_part[7:]
+            # Split bucket/path
+            parts = path_part.split("/", 1)
+            if len(parts) == 2:
+                bucket_name = parts[0]
+                file_path = parts[1].rstrip("?")  # Remove trailing ?
+                signed = client.storage.from_(bucket_name).create_signed_url(file_path, 300)
+                url = signed.get("signedURL", signed.get("signedUrl", url))
+                logger.info("Using signed URL for %s/%s", bucket_name, file_path)
+        except Exception as e:
+            logger.warning("Failed to create signed URL, trying direct: %s", e)
+
+    # Clean URL
+    url = url.rstrip("?")
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(url)
@@ -58,15 +86,18 @@ async def _download_image_b64(url: str) -> tuple[str, str]:
 
 
 async def _upload_image(project_id: str, user_id: str, image_b64: str, image_type: str) -> str:
-    """Upload base64 image to Supabase storage and record in generated_images."""
+    """Upload base64 image to Supabase storage (public bucket) and record in generated_images."""
     client = get_service_client()
     image_bytes = base64.b64decode(image_b64)
     path = f"{user_id}/{project_id}/{image_type}.png"
 
-    client.storage.from_("originals").upload(
+    # Use public bucket for generated images
+    client.storage.from_("generated-images").upload(
         path, image_bytes, {"content-type": "image/png"}
     )
-    image_url = client.storage.from_("originals").get_public_url(path)
+    image_url = client.storage.from_("generated-images").get_public_url(path)
+    # Remove trailing ? from URL
+    image_url = image_url.rstrip("?")
 
     client.table("generated_images").insert({
         "project_id": project_id,

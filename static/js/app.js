@@ -297,7 +297,8 @@ function initProjectPage() {
   }
 
   // Start SSE connection
-  const eventSource = new EventSource(`${API_BASE}/projects/${projectId}/stream`);
+  const sseToken = localStorage.getItem('dadam_token') || '';
+  const eventSource = new EventSource(`${API_BASE}/projects/${projectId}/stream?token=${sseToken}`);
 
   eventSource.onmessage = (event) => {
     const data = JSON.parse(event.data);
