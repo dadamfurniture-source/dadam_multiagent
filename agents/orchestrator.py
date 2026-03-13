@@ -61,7 +61,7 @@ STYLE_GUIDE = {
 IMAGE_RULES = (
     "No ovens or electronic appliances. "
     "No tall cabinets for sink category. "
-    "Sink area must have a visible sink bowl (stainless steel basin). "
+    "Sink area must have a visible sink bowl (stainless steel basin) with a faucet centered above it. "
     "Cabinets under cooktop/induction area must be DRAWERS (not doors). "
     "Keep original wall tiles exactly. "
 )
