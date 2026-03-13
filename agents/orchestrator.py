@@ -1,233 +1,304 @@
-"""CEO Agent - 전체 파이프라인 오케스트레이터"""
+"""CEO Agent - 직접 API 호출 오케스트레이터 (claude_agent_sdk 제거)
+
+파이프라인: 공간분석 → 배치계획 → 이미지생성 → 견적산출
+"""
 
 import asyncio
+import base64
 import json
+import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator
 
-from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions, query
-
-from agents.prompts import (
-    DESIGN_PLANNER_PROMPT,
-    DETAIL_DESIGNER_PROMPT,
-    IMAGE_GENERATOR_PROMPT,
-    QA_REVIEWER_PROMPT,
-    QUOTE_CALCULATOR_PROMPT,
-    SPACE_ANALYST_PROMPT,
+from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
+from agents.tools.image_tools import (
+    _call_flux_lora,
+    _call_gemini_image,
 )
-from shared.constants import PLANS
+from agents.tools.pricing_tools import (
+    BASE_PRICES,
+    COUNTERTOP_PRICES,
+    INSTALLATION_BASE,
+)
+from agents.tools.vision_tools import _call_claude_vision
+from shared.constants import CATEGORIES, PLANS
+from shared.supabase_client import get_service_client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ProjectRequest:
     project_id: str
     user_id: str
-    user_plan: str  # free, basic, pro, enterprise
-    category: str  # sink, island, closet, etc.
-    style: str | None  # modern, nordic, etc.
-    budget: int | None  # KRW
-    image_url: str  # 업로드된 사진 URL
-    notes: str | None  # 추가 요청사항
+    user_plan: str
+    category: str
+    style: str | None
+    budget: int | None
+    image_url: str
+    notes: str | None
 
 
-@dataclass
-class ProjectResult:
-    project_id: str
-    space_analysis: dict | None = None
-    layout: dict | None = None
-    simulation_images: list[str] | None = None
-    quote: dict | None = None
-    detail_design: dict | None = None
-    bom: dict | None = None
-    qa_report: dict | None = None
-    status: str = "processing"
-    error: str | None = None
+async def _download_image_b64(url: str) -> tuple[str, str]:
+    """Download image from URL and return (base64, media_type)."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        b64 = base64.b64encode(resp.content).decode()
+        ct = resp.headers.get("content-type", "image/jpeg")
+        if "png" in ct:
+            media_type = "image/png"
+        elif "webp" in ct:
+            media_type = "image/webp"
+        else:
+            media_type = "image/jpeg"
+        return b64, media_type
 
 
-def _build_agents(user_plan: str) -> dict[str, AgentDefinition]:
-    """요금제에 따라 사용 가능한 에이전트 구성"""
+async def _upload_image(project_id: str, user_id: str, image_b64: str, image_type: str) -> str:
+    """Upload base64 image to Supabase storage and record in generated_images."""
+    client = get_service_client()
+    image_bytes = base64.b64decode(image_b64)
+    path = f"{user_id}/{project_id}/{image_type}.png"
 
-    # 기본 에이전트 (모든 플랜)
-    agents = {
-        "space-analyst": AgentDefinition(
-            description="Analyze space photos to extract wall dimensions, utilities, and measurements. Use first.",
-            prompt=SPACE_ANALYST_PROMPT,
-            tools=[
-                "mcp__vision__analyze_space",
-                "mcp__supabase__read_project",
-            ],
-            model="opus",
-        ),
-        "design-planner": AgentDefinition(
-            description="Plan furniture module layout based on space analysis. Use after space analysis is complete.",
-            prompt=DESIGN_PLANNER_PROMPT,
-            tools=[
-                "mcp__supabase__read_project",
-                "mcp__layout__plan_furniture_layout",
-                "mcp__layout__get_open_door_contents",
-                "mcp__pricing__get_modules",
-                "mcp__feedback__search_similar_cases",
-                "mcp__feedback__get_active_constraints",
-            ],
-            model="sonnet",
-        ),
-        "image-generator": AgentDefinition(
-            description="Generate simulation images from layout plan. Use after design planning is complete.",
-            prompt=IMAGE_GENERATOR_PROMPT,
-            tools=[
-                "mcp__image__generate_cleanup",
-                "mcp__image__generate_furniture",
-                "mcp__image__generate_correction",
-                "mcp__image__generate_open",
-                "mcp__supabase__upload_image",
-            ],
-            model="sonnet",
-        ),
-        "quote-calculator": AgentDefinition(
-            description="Calculate quote from module layout. Use after design planning is complete.",
-            prompt=QUOTE_CALCULATOR_PROMPT,
-            tools=[
-                "mcp__pricing__get_prices",
-                "mcp__pricing__get_installation_cost",
-                "mcp__supabase__save_quote",
-                "mcp__feedback__get_price_calibration",
-            ],
-            model="haiku",
-        ),
-    }
+    client.storage.from_("originals").upload(
+        path, image_bytes, {"content-type": "image/png"}
+    )
+    image_url = client.storage.from_("originals").get_public_url(path)
 
-    # Pro+ 에이전트
-    plan_features = PLANS.get(user_plan, {}).get("features", [])
+    client.table("generated_images").insert({
+        "project_id": project_id,
+        "image_url": image_url,
+        "type": image_type,
+    }).execute()
 
-    if "detail_design" in plan_features:
-        agents["detail-designer"] = AgentDefinition(
-            description="Generate manufacturing-grade detail design drawings (Pro+). Use after quote is complete.",
-            prompt=DETAIL_DESIGNER_PROMPT,
-            tools=[
-                "mcp__supabase__read_project",
-                "mcp__drawing__generate_svg",
-                "mcp__supabase__save_design",
-            ],
-            model="opus",
-        )
-
-    if "bom" in plan_features:
-        agents["bom-generator"] = AgentDefinition(
-            description="Generate Bill of Materials (BOM) from detail design (Pro+). Use after detail design.",
-            prompt="Generate a complete Bill of Materials from the detail design. List every component with exact quantities, dimensions (mm), material specifications, and unit costs. Group by: panels, hardware (hinges/slides/handles), countertop, and accessories.",
-            tools=[
-                "mcp__supabase__read_project",
-                "mcp__pricing__get_materials",
-                "mcp__drawing__generate_bom_drawing",
-            ],
-            model="sonnet",
-        )
-
-    # QA runs automatically for Pro+
-    if user_plan in ("pro", "enterprise"):
-        agents["qa-reviewer"] = AgentDefinition(
-            description="QA reviewer for final quality validation of all design outputs (Pro+). Use last.",
-            prompt=QA_REVIEWER_PROMPT,
-            tools=["mcp__supabase__read_project"],
-            model="opus",
-        )
-
-    return agents
+    return image_url
 
 
-def _build_orchestrator_prompt(request: ProjectRequest) -> str:
-    """Build orchestrator prompt for given project request"""
-
-    plan_features = PLANS.get(request.user_plan, {}).get("features", [])
-    has_detail = "detail_design" in plan_features
-    has_bom = "bom" in plan_features
-    is_pro = request.user_plan in ("pro", "enterprise")
-
-    step_num = 1
-    steps = [
-        f"{step_num}. Use space-analyst to analyze the uploaded site photo. Extract wall dimensions, utility positions, and obstacles.",
-    ]
-    step_num += 1
-    steps.append(f"{step_num}. Use design-planner to create furniture module layout based on space analysis. Pass wall_width, category, sink/cooktop positions.")
-    step_num += 1
-    steps.append(f"{step_num}. Use image-generator to create simulation images (cleanup → furniture → correction → open-door).")
-    step_num += 1
-    steps.append(f"{step_num}. Use quote-calculator to calculate pricing from the module layout.")
-
-    if has_detail:
-        step_num += 1
-        steps.append(f"{step_num}. Use detail-designer to generate manufacturing-grade design drawings.")
-    if has_bom:
-        step_num += 1
-        steps.append(f"{step_num}. Use bom-generator to create Bill of Materials from detail design.")
-    if is_pro:
-        step_num += 1
-        steps.append(f"{step_num}. Use qa-reviewer for final quality validation of all outputs.")
-
-    steps_text = "\n".join(steps)
-    style_text = f"Preferred style: {request.style}" if request.style else "Style: auto-recommend"
-    budget_text = f"Budget: {request.budget:,} KRW" if request.budget else "Budget: not specified"
-    notes_text = f"Additional notes: {request.notes}" if request.notes else ""
-
-    return f"""Process a custom furniture simulation request.
-
-## Project Information
-- Project ID: {request.project_id}
-- Category: {request.category}
-- {style_text}
-- {budget_text}
-- Photo URL: {request.image_url}
-{notes_text}
-
-## Processing Pipeline
-{steps_text}
-
-IMPORTANT:
-- Pass each agent's output as input to the next agent in the chain.
-- All prompts for image generation must be in English and under 500 characters.
-- The layout plan must use the layout engine (plan_furniture_layout tool) for precise module distribution.
-- Return the final consolidated result as JSON with keys: space_analysis, layout, images, quote.
-"""
+def _update_stage(project_id: str, stage: str):
+    """Update project pipeline stage."""
+    client = get_service_client()
+    client.table("projects").update({
+        "pipeline_stage": stage,
+    }).eq("id", project_id).execute()
 
 
 async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]:
-    """메인 오케스트레이터 - 프로젝트 처리 파이프라인 실행
+    """메인 파이프라인 — 직접 API 호출 방식
 
     Yields:
         진행 상황 및 결과 딕셔너리
     """
     yield {"type": "status", "stage": "started", "project_id": request.project_id}
 
-    agents = _build_agents(request.user_plan)
-    prompt = _build_orchestrator_prompt(request)
+    client = get_service_client()
+    style = request.style or "modern"
 
-    result = ProjectResult(project_id=request.project_id)
+    # ─── 1. 공간 분석 (Claude Vision) ───
+    yield {"type": "progress", "content": "space analysis started"}
+    _update_stage(request.project_id, "space_analysis")
 
     try:
-        async for message in query(
-            prompt=prompt,
-            options=ClaudeAgentOptions(
-                allowed_tools=["Agent", "mcp__supabase__update_project"],
-                agents=agents,
-            ),
-        ):
-            # 에이전트 진행 상황 스트리밍
-            if hasattr(message, "content"):
-                yield {"type": "progress", "content": str(message.content)}
-
-            if hasattr(message, "result"):
-                result.status = "completed"
-                yield {
-                    "type": "result",
-                    "project_id": request.project_id,
-                    "data": message.result,
-                }
-
+        image_b64, media_type = await _download_image_b64(request.image_url)
     except Exception as e:
-        result.status = "failed"
-        result.error = str(e)
-        yield {
-            "type": "error",
-            "project_id": request.project_id,
-            "error": str(e),
+        logger.error("Image download failed: %s", e)
+        yield {"type": "error", "error": f"이미지 다운로드 실패: {e}"}
+        return
+
+    try:
+        from agents.prompts import SPACE_ANALYST_PROMPT
+
+        analysis_prompt = (
+            f"{SPACE_ANALYST_PROMPT}\n\n"
+            f"## Current Request\n"
+            f"Category: {request.category}\n"
+            f"Analyze this photo and return the JSON output as specified above."
+        )
+        space_result = await _call_claude_vision(image_b64, analysis_prompt, media_type)
+        logger.info("Space analysis complete: %s", json.dumps(space_result, ensure_ascii=False)[:200])
+    except Exception as e:
+        logger.error("Space analysis failed: %s", e)
+        # 기본값으로 계속 진행
+        space_result = {
+            "wall_dimensions_mm": {"width": 3000, "height": 2400},
+            "utility_positions": {},
         }
+
+    # DB에 공간 분석 저장
+    try:
+        client.table("space_analyses").insert({
+            "project_id": request.project_id,
+            "analysis_data": space_result,
+            "wall_width_mm": space_result.get("wall_dimensions_mm", {}).get("width", 3000),
+            "wall_height_mm": space_result.get("wall_dimensions_mm", {}).get("height", 2400),
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to save space analysis: %s", e)
+
+    yield {"type": "progress", "content": "space analysis complete"}
+
+    # ─── 2. 배치 계획 (Layout Engine) ───
+    yield {"type": "progress", "content": "layout design started"}
+    _update_stage(request.project_id, "design")
+
+    wall_width = space_result.get("wall_dimensions_mm", {}).get("width", 3000)
+    utilities = space_result.get("utility_positions", {})
+    sink_pos = utilities.get("water_supply", {}).get("position_mm")
+    cooktop_pos = utilities.get("exhaust_duct", {}).get("position_mm")
+
+    try:
+        layout_data = plan_layout(
+            wall_width=wall_width,
+            category=request.category,
+            sink_position=sink_pos,
+            cooktop_position=cooktop_pos,
+        )
+        if "error" in layout_data:
+            logger.warning("Layout returned error: %s", layout_data["error"])
+        else:
+            logger.info("Layout plan: %d modules, %dmm total",
+                        layout_data.get("module_count", 0),
+                        layout_data.get("total_module_width", 0))
+    except Exception as e:
+        logger.error("Layout planning failed: %s", e)
+        layout_data = {"modules": [], "error": str(e)}
+
+    # DB에 배치 저장
+    try:
+        client.table("layouts").insert({
+            "project_id": request.project_id,
+            "layout_data": layout_data,
+            "total_width_mm": layout_data.get("total_width", wall_width),
+        }).execute()
+    except Exception as e:
+        logger.warning("Failed to save layout: %s", e)
+
+    yield {"type": "progress", "content": "layout design complete"}
+
+    # ─── 3. 이미지 생성 (Gemini + Flux LoRA) ───
+    yield {"type": "progress", "content": "image generation started"}
+    _update_stage(request.project_id, "image_gen")
+
+    # 3a. Cleanup (Gemini)
+    cleanup_b64 = None
+    try:
+        cleanup_prompt = (
+            f"Remove all existing furniture and objects from this photo. "
+            f"Show only clean empty space with bare walls and floor. "
+            f"Preserve original lighting and perspective exactly."
+        )
+        cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
+        await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
+        logger.info("Cleanup image generated")
+    except Exception as e:
+        logger.error("Cleanup generation failed: %s", e)
+        cleanup_b64 = image_b64  # 원본으로 대체
+
+    # 3b. Furniture (Flux LoRA)
+    furniture_b64 = None
+    try:
+        module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
+        furniture_prompt = (
+            f"{style} style Korean built-in furniture, {module_desc}, "
+            f"photorealistic interior photography, natural lighting"
+        )
+        furniture_b64 = await _call_flux_lora(request.category, furniture_prompt)
+        await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
+        logger.info("Furniture image generated")
+    except Exception as e:
+        logger.error("Furniture generation failed: %s", e)
+
+    # 3c. Correction (Gemini)
+    corrected_b64 = None
+    if furniture_b64:
+        try:
+            correction_prompt = (
+                f"Adjust this furniture image to match original space lighting and color. "
+                f"Fix color temperature, shadows to look realistic in the room."
+            )
+            corrected_b64 = await _call_gemini_image(correction_prompt, furniture_b64)
+            await _upload_image(request.project_id, request.user_id, corrected_b64, "corrected")
+            logger.info("Correction image generated")
+        except Exception as e:
+            logger.error("Correction failed: %s", e)
+            corrected_b64 = furniture_b64
+
+    # 3d. Open Door (Gemini)
+    if corrected_b64:
+        try:
+            contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
+            open_prompt = (
+                f"Show all cabinet doors open revealing organized interior. "
+                f"Inside: {contents}. Keep same perspective and lighting."
+            )
+            open_b64 = await _call_gemini_image(open_prompt, corrected_b64)
+            await _upload_image(request.project_id, request.user_id, open_b64, "open")
+            logger.info("Open door image generated")
+        except Exception as e:
+            logger.error("Open door generation failed: %s", e)
+
+    yield {"type": "progress", "content": "image generation complete"}
+
+    # ─── 4. 견적 산출 ───
+    yield {"type": "progress", "content": "quote calculation started"}
+    _update_stage(request.project_id, "quote")
+
+    try:
+        modules = layout_data.get("modules", [])
+        subtotal = 0
+        quote_items = []
+
+        for m in modules:
+            width_str = str(m.get("width", 600))
+            base_price = BASE_PRICES.get("base_cabinet", {}).get(width_str, 180_000)
+            subtotal += base_price
+            quote_items.append({
+                "module": f"{m.get('type', 'cabinet')} {width_str}mm",
+                "price": base_price,
+            })
+
+        # 설치비
+        installation = INSTALLATION_BASE.get(request.category, 150_000)
+        # 상판 (기본 인조대리석)
+        countertop_area = wall_width / 1000 * 0.58  # 폭 x 깊이(580mm)
+        countertop_price = int(COUNTERTOP_PRICES["artificial_marble"] * countertop_area)
+
+        supply_amount = subtotal + countertop_price + installation
+        vat = int(supply_amount * 0.1)
+        total = supply_amount + vat
+
+        quote_data = {
+            "items": quote_items,
+            "subtotal": subtotal,
+            "countertop": countertop_price,
+            "installation": installation,
+            "supply_amount": supply_amount,
+            "vat": vat,
+            "total": total,
+        }
+
+        client.table("quotes").insert({
+            "project_id": request.project_id,
+            "quote_data": quote_data,
+            "total_amount": total,
+        }).execute()
+
+        logger.info("Quote: %s KRW", f"{total:,}")
+    except Exception as e:
+        logger.error("Quote calculation failed: %s", e)
+        quote_data = {"error": str(e)}
+
+    yield {"type": "progress", "content": "quote calculation complete"}
+
+    # ─── 완료 ───
+    yield {
+        "type": "result",
+        "project_id": request.project_id,
+        "data": {
+            "space_analysis": space_result,
+            "layout": layout_data,
+            "quote": quote_data,
+        },
+    }
