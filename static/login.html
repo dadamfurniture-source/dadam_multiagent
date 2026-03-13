@@ -128,9 +128,9 @@
     }
 
     async function loginWithGoogle() {
-      if (!supabase) return showError('Supabase 설정이 필요합니다.');
+      if (!sb) return showError('Supabase 설정이 필요합니다.');
       try {
-        const { error } = await supabase.auth.signInWithOAuth({
+        const { error } = await sb.auth.signInWithOAuth({
           provider: 'google',
           options: { redirectTo: window.location.origin + '/auth-callback.html' },
         });

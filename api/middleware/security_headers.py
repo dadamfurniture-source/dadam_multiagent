@@ -38,7 +38,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
-            "connect-src 'self' https://*.supabase.co https://api.stripe.com; "
+            "connect-src 'self' https://*.supabase.co https://api.stripe.com https://cdn.jsdelivr.net; "
             "frame-ancestors 'none'"
         )
 
