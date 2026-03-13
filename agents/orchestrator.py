@@ -319,9 +319,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     # 3c. 인페인팅 (Replicate) — cleanup된 이미지 위에 가구 배치
     furniture_b64 = None
+    upper_note = "Upper wall cabinets flush with ceiling, lower base cabinets with countertop. "
     inpaint_prompt = (
-        f"{layout_desc}{style} style {category_name}, {style_desc} "
-        f"{module_desc}. {placement_note}"
+        f"{layout_desc}{style} style {category_name}, {upper_note}"
+        f"{style_desc} {module_desc}. {placement_note}"
         f"Photorealistic interior, natural lighting. {IMAGE_RULES}"
     )
     if len(inpaint_prompt) > 500:
