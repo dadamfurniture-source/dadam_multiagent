@@ -157,8 +157,10 @@ def _create_furniture_mask(
     White (255) = area to inpaint (furniture zone)
     Black (0) = area to preserve (walls, ceiling, floor edges)
 
-    Uses space analysis data for precise mask placement.
-    Falls back to category-based heuristics if analysis unavailable.
+    Uses space analysis data (wall_layout, dimensions) for precise mask.
+    - straight: 정면 벽 하단만 마스킹 (좌우 여백 넉넉히)
+    - L-shape: 정면 + 측면 벽 포함
+    - U-shape: 3면 포함
 
     Returns: base64-encoded PNG mask image.
     """
@@ -169,40 +171,46 @@ def _create_furniture_mask(
     mask = Image.new("L", (width, height), 0)  # All black (preserve)
     draw = ImageDraw.Draw(mask)
 
-    # Category-specific mask regions (as fraction of image dimensions)
-    # 가구 카테고리별 마스크 영역 설정
-    if category in ("sink", "island"):
-        # 싱크대/아일랜드: 하단 60%, 좌우 5% 여백
-        # 벽면 상부와 천장은 보존
-        mask_region = (0.03, 0.35, 0.97, 0.95)
-    elif category in ("closet", "fridge_cabinet", "utility_closet"):
-        # 붙박이장/냉장고장/창고장: 키 큰 가구, 거의 전체 높이
-        mask_region = (0.05, 0.05, 0.95, 0.95)
-    elif category == "shoe_cabinet":
-        # 신발장: 중하단
-        mask_region = (0.05, 0.30, 0.95, 0.95)
-    elif category == "vanity":
-        # 화장대: 중앙부
-        mask_region = (0.10, 0.25, 0.90, 0.90)
-    else:
-        # 수납장 등 기본
-        mask_region = (0.05, 0.30, 0.95, 0.95)
+    wall_layout = "straight"
+    if space_analysis:
+        wall_layout = space_analysis.get("wall_layout", "straight")
 
-    # Space analysis 데이터로 마스크 정밀 조정
+    # Category + wall_layout에 따른 마스크 영역 설정
+    if category in ("sink", "island"):
+        if wall_layout == "straight":
+            # 1자 싱크대: 정면 벽 하단만, 좌우 10% 여백 (측면 벽 보존)
+            mask_region = (0.10, 0.35, 0.90, 0.92)
+        elif wall_layout == "L-shape":
+            # L자: 넓은 영역
+            mask_region = (0.05, 0.35, 0.95, 0.92)
+        else:
+            # U자 또는 기본
+            mask_region = (0.03, 0.35, 0.97, 0.92)
+    elif category in ("closet", "fridge_cabinet", "utility_closet"):
+        if wall_layout == "straight":
+            mask_region = (0.10, 0.05, 0.90, 0.92)
+        else:
+            mask_region = (0.05, 0.05, 0.95, 0.92)
+    elif category == "shoe_cabinet":
+        mask_region = (0.10, 0.30, 0.90, 0.92)
+    elif category == "vanity":
+        mask_region = (0.15, 0.25, 0.85, 0.88)
+    else:
+        mask_region = (0.10, 0.30, 0.90, 0.92)
+
+    # Space analysis로 높이 정밀 조정
     if space_analysis:
         wall_dims = space_analysis.get("wall_dimensions_mm", {})
         wall_h = wall_dims.get("height", 2400)
-        wall_w = wall_dims.get("width", 3000)
 
-        # 가구 높이 비율 계산 (벽 높이 대비)
         if category in ("sink", "island"):
             furniture_h_mm = 900  # 하부장 높이
             top_ratio = 1.0 - (furniture_h_mm / wall_h) - 0.05
-            mask_region = (0.03, max(0.25, top_ratio), 0.97, 0.95)
+            mask_region = (mask_region[0], max(0.30, top_ratio), mask_region[2], mask_region[3])
         elif category in ("closet", "fridge_cabinet"):
-            furniture_h_mm = 2200  # 키 큰 가구
+            furniture_h_mm = 2200
             top_ratio = 1.0 - (furniture_h_mm / wall_h)
-            mask_region = (0.05, max(0.03, top_ratio), 0.95, 0.95)
+            mask_region = (mask_region[0], max(0.03, top_ratio), mask_region[2], mask_region[3])
 
     x1 = int(width * mask_region[0])
     y1 = int(height * mask_region[1])
@@ -211,7 +219,9 @@ def _create_furniture_mask(
 
     draw.rectangle([x1, y1, x2, y2], fill=255)
 
-    # 마스크를 base64로 변환
+    logger.info("Mask region: layout=%s, rect=(%d,%d,%d,%d) on %dx%d",
+                wall_layout, x1, y1, x2, y2, width, height)
+
     buf = io.BytesIO()
     mask.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode()

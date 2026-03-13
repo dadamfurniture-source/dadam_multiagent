@@ -264,6 +264,17 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     style_desc = STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
     module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
 
+    # 벽 형태 (1자/L자/U자) — Claude Vision 분석 결과
+    wall_layout = space_result.get("wall_layout", "straight")
+    layout_desc = ""
+    if wall_layout == "straight":
+        layout_desc = "STRAIGHT single wall layout (1자). All cabinets along one wall only. "
+    elif wall_layout == "L-shape":
+        layout_desc = "L-shaped corner layout. Cabinets wrap around the corner. "
+    elif wall_layout == "U-shape":
+        layout_desc = "U-shaped layout. Cabinets on three walls. "
+    logger.info("Wall layout: %s", wall_layout)
+
     # 배관 위치 기반 배치 지시 (싱크대 카테고리)
     placement_note = ""
     if request.category == "sink":
@@ -290,7 +301,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     # 3b. 인페인팅 (Replicate) — 원본 벽/바닥 픽셀 보존
     furniture_b64 = None
     inpaint_prompt = (
-        f"{style} style {category_name}, {style_desc} "
+        f"{layout_desc}{style} style {category_name}, {style_desc} "
         f"{module_desc}. {placement_note}"
         f"Photorealistic interior, natural lighting. {IMAGE_RULES}"
     )
@@ -312,7 +323,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     if not furniture_b64:
         logger.info("Using Gemini fallback for furniture generation")
         furniture_prompt = (
-            f"Edit this image: add {style} {category_name} furniture. "
+            f"Edit this image: add {layout_desc}{style} {category_name} furniture. "
             f"{style_desc} {module_desc}. {placement_note}"
             f"CRITICAL: keep walls, tiles, floor, ceiling EXACTLY. "
             f"{IMAGE_RULES}Photorealistic."
