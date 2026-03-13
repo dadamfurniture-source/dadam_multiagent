@@ -298,10 +298,14 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             "PRESERVE wall color, tile pattern, lighting, perspective EXACTLY."
         )
         cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
-        await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
         logger.info("Cleanup complete — empty room generated")
+        # Upload은 별도 try (실패해도 cleanup_b64는 유지)
+        try:
+            await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
+        except Exception as ue:
+            logger.warning("Cleanup upload failed (non-critical): %s", ue)
     except Exception as e:
-        logger.warning("Cleanup failed, using original image: %s", e)
+        logger.warning("Cleanup generation failed, using original image: %s", e)
         cleanup_b64 = image_b64  # fallback: 원본 사용
 
     # 인페인팅 입력은 cleanup 결과 (깨끗한 빈 공간)
