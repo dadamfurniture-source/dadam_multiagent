@@ -61,6 +61,8 @@ STYLE_GUIDE = {
 IMAGE_RULES = (
     "No ovens or electronic appliances. "
     "No tall cabinets for sink category. "
+    "Sink area must have a visible sink bowl (stainless steel basin). "
+    "Cabinets under cooktop/induction area must be DRAWERS (not doors). "
     "Keep original wall tiles exactly. "
 )
 
@@ -281,9 +283,11 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     if request.category == "sink":
         parts = []
         if sink_pos:
-            parts.append(f"Sink bowl at {sink_pos}mm from left wall")
+            pct = int(sink_pos / wall_width * 100) if wall_width > 0 else 30
+            parts.append(f"Stainless steel sink bowl EXACTLY at {pct}% from left (water pipe position)")
         if cooktop_pos:
-            parts.append(f"cooktop/induction at {cooktop_pos}mm from left wall")
+            pct2 = int(cooktop_pos / wall_width * 100) if wall_width > 0 else 70
+            parts.append(f"cooktop zone with DRAWERS below at {pct2}% from left")
         if parts:
             placement_note = ". ".join(parts) + ". "
         placement_note += "No tall cabinets. "
