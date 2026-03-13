@@ -285,19 +285,30 @@ async def _call_replicate_inpaint(
         "guidance_scale": 7.5,
     }
 
-    # Try flux-fill-pro first (higher quality), fallback to SD inpainting
+    # Models with their version hashes and input formats
     models_to_try = [
-        ("black-forest-labs/flux-fill-pro", {
-            "image": image_uri,
-            "mask": mask_uri,
-            "prompt": prompt,
-            "steps": 50,
-        }),
-        ("stability-ai/stable-diffusion-inpainting", input_data),
+        {
+            "name": "black-forest-labs/flux-fill-pro",
+            "version": "2d4197724d8ed13cc78191e794ebbe6aeedcfe4c5b36f464794732d5ccb9735f",
+            "input": {
+                "image": image_uri,
+                "mask": mask_uri,
+                "prompt": prompt,
+                "steps": 50,
+                "guidance": 7.5,
+                "output_format": "png",
+            },
+        },
+        {
+            "name": "stability-ai/stable-diffusion-inpainting",
+            "version": "95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3",
+            "input": input_data,
+        },
     ]
 
     last_error = None
-    for model_name, model_input in models_to_try:
+    for model_cfg in models_to_try:
+        model_name = model_cfg["name"]
         try:
             logger.info("Trying inpaint model: %s", model_name)
             async with httpx.AsyncClient(timeout=300) as client:
@@ -305,8 +316,8 @@ async def _call_replicate_inpaint(
                     "https://api.replicate.com/v1/predictions",
                     headers=headers,
                     json={
-                        "model" if "/" in model_name and ":" not in model_name else "version": model_name,
-                        "input": model_input,
+                        "version": model_cfg["version"],
+                        "input": model_cfg["input"],
                     },
                 )
                 # If model not found, try next

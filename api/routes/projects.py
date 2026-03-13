@@ -200,68 +200,61 @@ async def get_project(
     return APIResponse(data=data)
 
 
-def _run_pipeline_sync(project_id: str, user_id: str, user_plan: str, category: str,
-                        style: str | None, budget: int | None, image_url: str, notes: str | None):
-    """백그라운드에서 AI 파이프라인을 동기적으로 실행 (BackgroundTasks에서 호출)"""
+async def _run_pipeline_async(project_id: str, user_id: str, user_plan: str, category: str,
+                              style: str | None, budget: int | None, image_url: str, notes: str | None):
+    """백그라운드에서 AI 파이프라인을 비동기 실행"""
     from agents.orchestrator import ProjectRequest, process_project
 
-    async def _run():
-        client = get_service_client()
-        request = ProjectRequest(
-            project_id=project_id,
-            user_id=user_id,
-            user_plan=user_plan,
-            category=category,
-            style=style,
-            budget=budget,
-            image_url=image_url,
-            notes=notes,
-        )
+    client = get_service_client()
+    request = ProjectRequest(
+        project_id=project_id,
+        user_id=user_id,
+        user_plan=user_plan,
+        category=category,
+        style=style,
+        budget=budget,
+        image_url=image_url,
+        notes=notes,
+    )
 
-        pipeline_log = []
-        try:
-            async for event in process_project(request):
-                pipeline_log.append(event)
-                # 진행 상황을 pipeline_stage 필드에 기록
-                if event.get("type") == "progress":
-                    content = event.get("content", "")
-                    stage = "processing"
-                    if "analyz" in content or "space" in content:
-                        stage = "space_analysis"
-                    elif "layout" in content or "design" in content:
-                        stage = "design"
-                    elif "image" in content or "generat" in content:
-                        stage = "image_gen"
-                    elif "quote" in content or "price" in content:
-                        stage = "quote"
-                    client.table("projects").update({
-                        "pipeline_stage": stage,
-                    }).eq("id", project_id).execute()
+    try:
+        async for event in process_project(request):
+            # 진행 상황을 pipeline_stage 필드에 기록
+            if event.get("type") == "progress":
+                content = event.get("content", "")
+                stage = "processing"
+                if "analyz" in content or "space" in content:
+                    stage = "space_analysis"
+                elif "layout" in content or "design" in content:
+                    stage = "design"
+                elif "image" in content or "generat" in content:
+                    stage = "image_gen"
+                elif "quote" in content or "price" in content:
+                    stage = "quote"
+                client.table("projects").update({
+                    "pipeline_stage": stage,
+                }).eq("id", project_id).execute()
 
-            client.table("projects").update({
-                "status": "completed",
-                "pipeline_stage": "completed",
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", project_id).execute()
+        client.table("projects").update({
+            "status": "completed",
+            "pipeline_stage": "completed",
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", project_id).execute()
 
-        except Exception as e:
-            logger.error("Project %s pipeline failed: %s", project_id, e, exc_info=True)
-            client.table("projects").update({
-                "status": "failed",
-                "pipeline_stage": "failed",
-            }).eq("id", project_id).execute()
-
-    # BackgroundTasks에서는 동기 함수가 호출되므로 asyncio.run 사용
-    asyncio.run(_run())
+    except Exception as e:
+        logger.error("Project %s pipeline failed: %s", project_id, e, exc_info=True)
+        client.table("projects").update({
+            "status": "failed",
+            "pipeline_stage": "failed",
+        }).eq("id", project_id).execute()
 
 
 @router.post("/{project_id}/run", response_model=APIResponse)
 async def run_project(
     project_id: str,
-    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
-    """AI 파이프라인 실행 시작 — BackgroundTasks로 비동기 실행, SSE로 상태 폴링"""
+    """AI 파이프라인 실행 시작 — asyncio.create_task로 비동기 실행, SSE로 상태 폴링"""
     client = get_service_client()
 
     project = (
@@ -297,17 +290,18 @@ async def run_project(
     )
     image_url = original_img.data[0]["image_url"] if original_img.data else ""
 
-    # 백그라운드에서 파이프라인 실행
-    background_tasks.add_task(
-        _run_pipeline_sync,
-        project_id=project_id,
-        user_id=p["user_id"],
-        user_plan=user.plan,
-        category=p["category"],
-        style=p.get("style"),
-        budget=p.get("budget"),
-        image_url=image_url,
-        notes=p.get("notes"),
+    # asyncio.create_task로 백그라운드 실행 (이벤트 루프 공유)
+    asyncio.create_task(
+        _run_pipeline_async(
+            project_id=project_id,
+            user_id=p["user_id"],
+            user_plan=user.plan,
+            category=p["category"],
+            style=p.get("style"),
+            budget=p.get("budget"),
+            image_url=image_url,
+            notes=p.get("notes"),
+        )
     )
 
     return APIResponse(

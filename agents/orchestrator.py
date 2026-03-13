@@ -204,7 +204,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             "walls": space_result.get("wall_dimensions_mm"),
             "pipes": space_result.get("utility_positions"),
             "space_summary": f"Wall {space_result.get('wall_dimensions_mm', {}).get('width', 3000)}mm x {space_result.get('wall_dimensions_mm', {}).get('height', 2400)}mm",
-            "confidence": space_result.get("confidence", 0.7),
+            "confidence": float(space_result["confidence"]) if isinstance(space_result.get("confidence"), (int, float)) else 0.7,
         }).execute()
     except Exception as e:
         logger.warning("Failed to save space analysis: %s", e)
@@ -281,7 +281,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         mask_b64 = _create_furniture_mask(
             image_b64, request.category, space_result
         )
-        await _upload_image(request.project_id, request.user_id, mask_b64, "mask")
+        # 마스크는 디버그용으로만 저장 (generated_images에 mask type 없음)
         logger.info("Furniture mask generated for category: %s", request.category)
     except Exception as e:
         logger.error("Mask generation failed: %s", e)
