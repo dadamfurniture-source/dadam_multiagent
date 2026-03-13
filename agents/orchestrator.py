@@ -269,7 +269,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     # 3b. Furniture (Flux LoRA → Gemini fallback)
     furniture_b64 = None
-    category_name = CATEGORIES.get(request.category, request.category)
+    category_name = CATEGORIES_EN.get(request.category, request.category)
     style_desc = STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
     module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
 
@@ -289,6 +289,30 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         f"{IMAGE_RULES}Photorealistic, natural lighting."
     )
 
+    # 참고 이미지 조회 (style_references 테이블)
+    ref_images_b64 = []
+    try:
+        refs = (
+            client.table("style_references")
+            .select("image_url")
+            .eq("category", request.category)
+            .eq("style", style)
+            .eq("is_active", True)
+            .limit(2)
+            .execute()
+        )
+        if refs.data:
+            for ref in refs.data:
+                try:
+                    ref_b64, _ = await _download_image_b64(ref["image_url"])
+                    ref_images_b64.append(ref_b64)
+                except Exception:
+                    pass
+            if ref_images_b64:
+                logger.info("Loaded %d reference images for %s/%s", len(ref_images_b64), request.category, style)
+    except Exception as e:
+        logger.warning("Failed to load reference images: %s", e)
+
     try:
         furniture_b64 = await _call_flux_lora(request.category, furniture_prompt)
         await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
@@ -297,9 +321,13 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         logger.warning("Flux LoRA failed (%s), falling back to Gemini for furniture", e)
         try:
             base_img = cleanup_b64 or image_b64
-            furniture_b64 = await _call_gemini_image(furniture_prompt, base_img)
+            # 참고 이미지가 있으면 프롬프트에 안내 추가
+            ref_prompt = furniture_prompt
+            if ref_images_b64:
+                ref_prompt = f"Use the reference images as style guide. {furniture_prompt}"
+            furniture_b64 = await _call_gemini_image(ref_prompt, base_img, extra_images=ref_images_b64)
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Furniture image generated via Gemini fallback")
+            logger.info("Furniture image generated via Gemini (with %d refs)", len(ref_images_b64))
         except Exception as e2:
             logger.error("Furniture generation failed (both LoRA and Gemini): %s", e2)
 
