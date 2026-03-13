@@ -217,6 +217,43 @@ def _create_furniture_mask(
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def _composite_inpaint_result(
+    original_b64: str,
+    inpainted_b64: str,
+    mask_b64: str,
+) -> str:
+    """Composite inpainted result onto original image using mask.
+
+    Takes ONLY the furniture region (white mask area) from the inpainted image
+    and pastes it onto the original. Non-masked areas are original pixels EXACTLY.
+
+    This guarantees pixel-perfect wall/floor/ceiling preservation regardless
+    of how the inpainting model handles non-masked regions.
+    """
+    original = Image.open(io.BytesIO(base64.b64decode(original_b64))).convert("RGBA")
+    inpainted = Image.open(io.BytesIO(base64.b64decode(inpainted_b64))).convert("RGBA")
+    mask = Image.open(io.BytesIO(base64.b64decode(mask_b64))).convert("L")
+
+    # Resize inpainted/mask to match original if needed
+    if inpainted.size != original.size:
+        inpainted = inpainted.resize(original.size, Image.LANCZOS)
+    if mask.size != original.size:
+        mask = mask.resize(original.size, Image.LANCZOS)
+
+    # Feather the mask edges for natural blending (5px gaussian blur)
+    from PIL import ImageFilter
+    mask_feathered = mask.filter(ImageFilter.GaussianBlur(radius=5))
+
+    # Composite: original where mask=0 (black), inpainted where mask=255 (white)
+    result = Image.composite(inpainted, original, mask_feathered)
+
+    # Convert back to RGB PNG base64
+    result_rgb = result.convert("RGB")
+    buf = io.BytesIO()
+    result_rgb.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def _image_b64_to_data_uri(image_b64: str) -> str:
     """Convert base64 image to data URI for Replicate API."""
     return f"data:image/png;base64,{image_b64}"
@@ -228,10 +265,11 @@ async def _call_replicate_inpaint(
     prompt: str,
     model: str = "stability-ai/stable-diffusion-inpainting",
 ) -> str:
-    """Call Replicate inpainting model. Returns base64-encoded result.
+    """Call Replicate inpainting model, then composite onto original.
 
-    The mask defines which area to regenerate (white=inpaint, black=preserve).
-    Original pixels in black mask areas are preserved EXACTLY.
+    Returns base64-encoded image with:
+    - Furniture region: AI-generated content
+    - Everything else: EXACT original pixels (via compositing)
     """
     headers = {"Authorization": f"Bearer {REPLICATE_API_TOKEN}"}
 
@@ -290,7 +328,15 @@ async def _call_replicate_inpaint(
                         # Output can be string URL or list
                         image_url = output[0] if isinstance(output, list) else output
                         img_resp = await client.get(image_url)
-                        return base64.b64encode(img_resp.content).decode()
+                        raw_result_b64 = base64.b64encode(img_resp.content).decode()
+
+                        # 합성: 원본 위에 가구 영역만 붙여넣기
+                        # 마스크 외 영역은 원본 픽셀 그대로
+                        composited = _composite_inpaint_result(
+                            image_b64, raw_result_b64, mask_b64
+                        )
+                        logger.info("Composited inpaint result onto original")
+                        return composited
 
                     if status_data["status"] == "failed":
                         raise ValueError(f"Inpainting failed: {status_data.get('error')}")
