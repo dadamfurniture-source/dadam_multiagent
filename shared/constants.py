@@ -12,6 +12,18 @@ CATEGORIES = {
     "utility_closet": "창고장",
 }
 
+# 카테고리 영어명 (이미지 생성 프롬프트용)
+CATEGORIES_EN = {
+    "sink": "L-shaped kitchen sink cabinet",
+    "island": "kitchen island",
+    "closet": "built-in wardrobe closet",
+    "fridge_cabinet": "built-in fridge cabinet",
+    "shoe_cabinet": "entryway shoe cabinet",
+    "vanity": "vanity dressing table",
+    "storage": "built-in storage cabinet",
+    "utility_closet": "utility storage closet",
+}
+
 # 요금제
 PLANS = {
     "free": {

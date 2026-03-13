@@ -21,8 +21,17 @@ REPLICATE_API_TOKEN = settings.replicate_api_token
 GEMINI_MODEL = "gemini-2.5-flash-image"
 
 
-async def _call_gemini_image(prompt: str, reference_image_b64: str | None = None) -> str:
+async def _call_gemini_image(
+    prompt: str,
+    reference_image_b64: str | None = None,
+    extra_images: list[str] | None = None,
+) -> str:
     """Call Gemini Image API. Returns base64-encoded image.
+
+    Args:
+        prompt: Text prompt (max 500 chars for reliability)
+        reference_image_b64: Primary reference image (base64)
+        extra_images: Additional reference images (base64 list, e.g. style references)
 
     IMPORTANT: Keep prompt under 500 chars for reliability.
     Longer prompts may cause IMAGE_OTHER errors in production.
@@ -40,6 +49,15 @@ async def _call_gemini_image(prompt: str, reference_image_b64: str | None = None
                 "data": reference_image_b64,
             }
         })
+    # 참고 이미지 추가 (스타일 레퍼런스 등)
+    if extra_images:
+        for img_b64 in extra_images[:2]:  # 최대 2장
+            parts.append({
+                "inlineData": {
+                    "mimeType": "image/png",
+                    "data": img_b64,
+                }
+            })
     parts.append({"text": prompt})
 
     body = {

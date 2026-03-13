@@ -13,7 +13,7 @@ from api.middleware.error_handler import register_error_handlers
 from api.middleware.logging_mw import RequestLoggingMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
 from api.middleware.security_headers import SecurityHeadersMiddleware
-from api.routes import accounting, admin, enterprise, exports, feedback, orders, payments, projects
+from api.routes import accounting, admin, enterprise, exports, feedback, orders, payments, projects, references
 from shared.config import settings
 
 # Sentry 에러 추적 (DSN이 설정된 경우에만 활성화)
@@ -78,6 +78,7 @@ app.include_router(exports.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(enterprise.router, prefix="/api/v1")
+app.include_router(references.router, prefix="/api/v1")
 
 
 @app.get("/api/v1/config")

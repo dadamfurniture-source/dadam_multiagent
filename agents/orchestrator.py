@@ -21,7 +21,7 @@ from agents.tools.pricing_tools import (
     INSTALLATION_BASE,
 )
 from agents.tools.vision_tools import _call_claude_vision
-from shared.constants import CATEGORIES, PLANS
+from shared.constants import CATEGORIES, CATEGORIES_EN, PLANS
 from shared.supabase_client import get_service_client
 
 logger = logging.getLogger(__name__)
