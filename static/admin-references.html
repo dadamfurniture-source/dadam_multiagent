@@ -65,19 +65,14 @@
               <option value="luxury">럭셔리</option>
             </select>
           </div>
-          <div class="form-group">
-            <label class="form-label">이미지</label>
-            <input type="file" id="ref-file" accept="image/*" required class="form-input" onchange="previewFile(this)">
-          </div>
           <div class="form-group" style="flex:2">
-            <label class="form-label">설명 (선택)</label>
-            <input type="text" id="ref-desc" class="form-input" placeholder="예: 화이트 모던 싱크대 참고">
+            <label class="form-label">이미지 (여러 장 선택 가능)</label>
+            <input type="file" id="ref-file" accept="image/*" multiple required class="form-input" onchange="previewFiles(this)">
           </div>
           <button type="submit" class="btn btn-primary" id="upload-btn">업로드</button>
         </div>
-        <div id="preview-area" style="margin-top:12px;display:none">
-          <img id="preview-img" class="preview-img">
-        </div>
+        <div id="preview-area" style="margin-top:12px;display:none;display:flex;gap:8px;flex-wrap:wrap"></div>
+        <div id="upload-progress" style="margin-top:8px;display:none;font-size:13px;color:var(--text-secondary)"></div>
       </form>
     </div>
 
@@ -116,15 +111,22 @@
     const CATEGORY_NAMES = {sink:'싱크대',island:'아일랜드',closet:'붙박이장',fridge_cabinet:'냉장고장',shoe_cabinet:'신발장',vanity:'화장대',storage:'수납장',utility_closet:'창고장'};
     const STYLE_NAMES = {modern:'모던',nordic:'북유럽',classic:'클래식',natural:'내추럴',industrial:'인더스트리얼',luxury:'럭셔리'};
 
-    function previewFile(input) {
-      const file = input.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = e => {
-        document.getElementById('preview-img').src = e.target.result;
-        document.getElementById('preview-area').style.display = 'block';
-      };
-      reader.readAsDataURL(file);
+    function previewFiles(input) {
+      const area = document.getElementById('preview-area');
+      area.innerHTML = '';
+      const files = input.files;
+      if (!files.length) { area.style.display = 'none'; return; }
+      area.style.display = 'flex';
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          img.className = 'preview-img';
+          area.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
     function showMsg(type, text) {
@@ -139,37 +141,60 @@
     async function handleUpload(e) {
       e.preventDefault();
       const btn = document.getElementById('upload-btn');
+      const files = document.getElementById('ref-file').files;
+      const category = document.getElementById('ref-category').value;
+      const style = document.getElementById('ref-style').value;
+      const progress = document.getElementById('upload-progress');
+
+      if (!files.length) return;
+
       btn.disabled = true;
-      btn.textContent = '업로드 중...';
+      progress.style.display = 'block';
 
-      try {
-        const formData = new FormData();
-        formData.append('image', document.getElementById('ref-file').files[0]);
-        formData.append('category', document.getElementById('ref-category').value);
-        formData.append('style', document.getElementById('ref-style').value);
-        const desc = document.getElementById('ref-desc').value;
-        if (desc) formData.append('description', desc);
+      const token = localStorage.getItem('dadam_token');
+      let success = 0;
+      let failed = 0;
 
-        const token = localStorage.getItem('dadam_token');
-        const resp = await fetch(`${API}/references`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          body: formData,
-        });
+      for (let i = 0; i < files.length; i++) {
+        progress.textContent = `업로드 중... (${i + 1}/${files.length})`;
+        btn.textContent = `${i + 1}/${files.length}`;
 
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.message || data.detail || '업로드 실패');
+        try {
+          const formData = new FormData();
+          formData.append('image', files[i]);
+          formData.append('category', category);
+          formData.append('style', style);
 
-        showMsg('ok', '참고 이미지가 등록되었습니다.');
-        document.getElementById('upload-form').reset();
-        document.getElementById('preview-area').style.display = 'none';
-        loadRefs();
-      } catch (err) {
-        showMsg('err', err.message);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '업로드';
+          const resp = await fetch(`${API}/references`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData,
+          });
+
+          if (!resp.ok) {
+            const data = await resp.json();
+            throw new Error(data.message || data.detail || '업로드 실패');
+          }
+          success++;
+        } catch (err) {
+          failed++;
+          console.error(`File ${files[i].name} failed:`, err);
+        }
       }
+
+      progress.style.display = 'none';
+      if (failed === 0) {
+        showMsg('ok', `${success}장 업로드 완료`);
+      } else {
+        showMsg('err', `${success}장 성공, ${failed}장 실패`);
+      }
+
+      document.getElementById('upload-form').reset();
+      document.getElementById('preview-area').style.display = 'none';
+      document.getElementById('preview-area').innerHTML = '';
+      btn.disabled = false;
+      btn.textContent = '업로드';
+      loadRefs();
     }
 
     async function loadRefs() {
