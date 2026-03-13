@@ -67,8 +67,10 @@ if settings.is_production:
         missing.append("SUPABASE_URL")
     if not settings.supabase_service_key:
         missing.append("SUPABASE_SERVICE_ROLE_KEY")
-    if not settings.stripe_webhook_secret:
-        missing.append("STRIPE_WEBHOOK_SECRET")
     if missing:
         logger.critical(f"FATAL: Missing required env vars for production: {missing}")
         sys.exit(1)
+
+    # Stripe 미설정 시 경고만 (계정 없으면 결제 기능 비활성)
+    if not settings.stripe_webhook_secret:
+        logger.warning("STRIPE_WEBHOOK_SECRET not set — payment features disabled")
