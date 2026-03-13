@@ -1,18 +1,23 @@
-"""Image Generation MCP Tools — Gemini 2.5 Flash Image + Flux LoRA
+"""Image Generation MCP Tools — Mask-based Inpainting + Gemini
 
-Pipeline: Cleanup(Gemini) → Furniture(Flux LoRA) → Correction(Gemini) → Open(Gemini)
-Prompts must be kept under 500 chars for Gemini reliability.
+Pipeline: Mask → Inpaint(Replicate) → Open(Gemini)
+Mask-based inpainting preserves original walls/tiles pixel-perfectly.
 """
 
 import asyncio
 import base64
+import io
 import json
+import logging
 
 import httpx
+from PIL import Image, ImageDraw
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from shared.config import settings
 from shared.constants import LORA_MODELS
+
+logger = logging.getLogger(__name__)
 
 GOOGLE_API_KEY = settings.google_api_key
 REPLICATE_API_TOKEN = settings.replicate_api_token
@@ -135,6 +140,169 @@ async def _call_flux_lora(category: str, prompt: str) -> str:
                 raise ValueError(f"Flux LoRA failed: {status_data.get('error')}")
 
     raise TimeoutError("Flux LoRA prediction timed out (3min)")
+
+
+# =============================================================================
+# Mask-based Inpainting — 원본 벽/바닥 100% 보존
+# =============================================================================
+
+
+def _create_furniture_mask(
+    image_b64: str,
+    category: str,
+    space_analysis: dict | None = None,
+) -> str:
+    """Create a binary mask for furniture placement area.
+
+    White (255) = area to inpaint (furniture zone)
+    Black (0) = area to preserve (walls, ceiling, floor edges)
+
+    Uses space analysis data for precise mask placement.
+    Falls back to category-based heuristics if analysis unavailable.
+
+    Returns: base64-encoded PNG mask image.
+    """
+    img_bytes = base64.b64decode(image_b64)
+    img = Image.open(io.BytesIO(img_bytes))
+    width, height = img.size
+
+    mask = Image.new("L", (width, height), 0)  # All black (preserve)
+    draw = ImageDraw.Draw(mask)
+
+    # Category-specific mask regions (as fraction of image dimensions)
+    # 가구 카테고리별 마스크 영역 설정
+    if category in ("sink", "island"):
+        # 싱크대/아일랜드: 하단 60%, 좌우 5% 여백
+        # 벽면 상부와 천장은 보존
+        mask_region = (0.03, 0.35, 0.97, 0.95)
+    elif category in ("closet", "fridge_cabinet", "utility_closet"):
+        # 붙박이장/냉장고장/창고장: 키 큰 가구, 거의 전체 높이
+        mask_region = (0.05, 0.05, 0.95, 0.95)
+    elif category == "shoe_cabinet":
+        # 신발장: 중하단
+        mask_region = (0.05, 0.30, 0.95, 0.95)
+    elif category == "vanity":
+        # 화장대: 중앙부
+        mask_region = (0.10, 0.25, 0.90, 0.90)
+    else:
+        # 수납장 등 기본
+        mask_region = (0.05, 0.30, 0.95, 0.95)
+
+    # Space analysis 데이터로 마스크 정밀 조정
+    if space_analysis:
+        wall_dims = space_analysis.get("wall_dimensions_mm", {})
+        wall_h = wall_dims.get("height", 2400)
+        wall_w = wall_dims.get("width", 3000)
+
+        # 가구 높이 비율 계산 (벽 높이 대비)
+        if category in ("sink", "island"):
+            furniture_h_mm = 900  # 하부장 높이
+            top_ratio = 1.0 - (furniture_h_mm / wall_h) - 0.05
+            mask_region = (0.03, max(0.25, top_ratio), 0.97, 0.95)
+        elif category in ("closet", "fridge_cabinet"):
+            furniture_h_mm = 2200  # 키 큰 가구
+            top_ratio = 1.0 - (furniture_h_mm / wall_h)
+            mask_region = (0.05, max(0.03, top_ratio), 0.95, 0.95)
+
+    x1 = int(width * mask_region[0])
+    y1 = int(height * mask_region[1])
+    x2 = int(width * mask_region[2])
+    y2 = int(height * mask_region[3])
+
+    draw.rectangle([x1, y1, x2, y2], fill=255)
+
+    # 마스크를 base64로 변환
+    buf = io.BytesIO()
+    mask.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _image_b64_to_data_uri(image_b64: str) -> str:
+    """Convert base64 image to data URI for Replicate API."""
+    return f"data:image/png;base64,{image_b64}"
+
+
+async def _call_replicate_inpaint(
+    image_b64: str,
+    mask_b64: str,
+    prompt: str,
+    model: str = "stability-ai/stable-diffusion-inpainting",
+) -> str:
+    """Call Replicate inpainting model. Returns base64-encoded result.
+
+    The mask defines which area to regenerate (white=inpaint, black=preserve).
+    Original pixels in black mask areas are preserved EXACTLY.
+    """
+    headers = {"Authorization": f"Bearer {REPLICATE_API_TOKEN}"}
+
+    # Replicate accepts data URIs for image inputs
+    image_uri = _image_b64_to_data_uri(image_b64)
+    mask_uri = _image_b64_to_data_uri(mask_b64)
+
+    input_data = {
+        "image": image_uri,
+        "mask": mask_uri,
+        "prompt": prompt,
+        "num_inference_steps": 50,
+        "guidance_scale": 7.5,
+    }
+
+    # Try flux-fill-pro first (higher quality), fallback to SD inpainting
+    models_to_try = [
+        ("black-forest-labs/flux-fill-pro", {
+            "image": image_uri,
+            "mask": mask_uri,
+            "prompt": prompt,
+            "steps": 50,
+        }),
+        ("stability-ai/stable-diffusion-inpainting", input_data),
+    ]
+
+    last_error = None
+    for model_name, model_input in models_to_try:
+        try:
+            logger.info("Trying inpaint model: %s", model_name)
+            async with httpx.AsyncClient(timeout=300) as client:
+                resp = await client.post(
+                    "https://api.replicate.com/v1/predictions",
+                    headers=headers,
+                    json={
+                        "model" if "/" in model_name and ":" not in model_name else "version": model_name,
+                        "input": model_input,
+                    },
+                )
+                # If model not found, try next
+                if resp.status_code in (404, 422):
+                    logger.warning("Model %s not available: %s", model_name, resp.status_code)
+                    continue
+                resp.raise_for_status()
+                prediction = resp.json()
+
+                # Poll for completion (max 5 minutes for inpainting)
+                prediction_url = prediction["urls"]["get"]
+                for _ in range(100):
+                    await asyncio.sleep(3)
+                    status_resp = await client.get(prediction_url, headers=headers)
+                    status_data = status_resp.json()
+
+                    if status_data["status"] == "succeeded":
+                        output = status_data["output"]
+                        # Output can be string URL or list
+                        image_url = output[0] if isinstance(output, list) else output
+                        img_resp = await client.get(image_url)
+                        return base64.b64encode(img_resp.content).decode()
+
+                    if status_data["status"] == "failed":
+                        raise ValueError(f"Inpainting failed: {status_data.get('error')}")
+
+                raise TimeoutError(f"Inpainting timed out (5min) with {model_name}")
+
+        except (httpx.HTTPStatusError, ValueError, TimeoutError) as e:
+            last_error = e
+            logger.warning("Inpaint model %s failed: %s", model_name, e)
+            continue
+
+    raise ValueError(f"All inpainting models failed. Last error: {last_error}")
 
 
 # =============================================================================

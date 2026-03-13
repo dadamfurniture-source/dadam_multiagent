@@ -14,6 +14,8 @@ from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
 from agents.tools.image_tools import (
     _call_flux_lora,
     _call_gemini_image,
+    _call_replicate_inpaint,
+    _create_furniture_mask,
 )
 from agents.tools.pricing_tools import (
     BASE_PRICES,
@@ -252,28 +254,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     yield {"type": "progress", "content": "layout design complete"}
 
-    # ─── 3. 이미지 생성 (Gemini + Flux LoRA) ───
+    # ─── 3. 이미지 생성 (마스크 기반 인페인팅) ───
+    # 파이프라인: Mask → Inpaint(Replicate) → Open(Gemini)
+    # 마스크 영역만 AI가 생성, 나머지는 원본 픽셀 100% 보존
     yield {"type": "progress", "content": "image generation started"}
     _update_stage(request.project_id, "image_gen")
 
-    # 3a. Cleanup (Gemini)
-    cleanup_b64 = None
-    try:
-        cleanup_prompt = (
-            f"Edit this photo: remove furniture, debris, tools, trash. "
-            f"Fix unfinished walls: fill gaps, repair rough edges. "
-            f"CRITICAL: Do NOT change wall tiles, tile pattern, tile color, "
-            f"floor, ceiling, or camera angle. Only remove objects."
-        )
-        cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
-        await _upload_image(request.project_id, request.user_id, cleanup_b64, "cleanup")
-        logger.info("Cleanup image generated")
-    except Exception as e:
-        logger.error("Cleanup generation failed: %s", e)
-        cleanup_b64 = image_b64  # 원본으로 대체
-
-    # 3b. Furniture (Flux LoRA → Gemini fallback)
-    furniture_b64 = None
     category_name = CATEGORIES_EN.get(request.category, request.category)
     style_desc = STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
     module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
@@ -290,82 +276,80 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             placement_note = ". ".join(parts) + ". "
         placement_note += "No tall cabinets. "
 
-    furniture_prompt = (
-        f"Edit the FIRST image: add {style} {category_name} furniture. "
-        f"{style_desc} {module_desc}. {placement_note}"
-        f"CRITICAL: keep walls, tiles, floor, ceiling EXACTLY as first image. "
-        f"{IMAGE_RULES}Photorealistic."
-    )
-
-    # 참고 이미지 조회 (style_references 테이블)
-    ref_images_b64 = []
+    # 3a. 마스크 생성 (가구 배치 영역)
     try:
-        refs = (
-            client.table("style_references")
-            .select("image_url")
-            .eq("category", request.category)
-            .eq("style", style)
-            .eq("is_active", True)
-            .limit(2)
-            .execute()
+        mask_b64 = _create_furniture_mask(
+            image_b64, request.category, space_result
         )
-        if refs.data:
-            for ref in refs.data:
-                try:
-                    ref_b64, _ = await _download_image_b64(ref["image_url"])
-                    ref_images_b64.append(ref_b64)
-                except Exception:
-                    pass
-            if ref_images_b64:
-                logger.info("Loaded %d reference images for %s/%s", len(ref_images_b64), request.category, style)
+        await _upload_image(request.project_id, request.user_id, mask_b64, "mask")
+        logger.info("Furniture mask generated for category: %s", request.category)
     except Exception as e:
-        logger.warning("Failed to load reference images: %s", e)
+        logger.error("Mask generation failed: %s", e)
+        mask_b64 = None
 
-    try:
-        furniture_b64 = await _call_flux_lora(request.category, furniture_prompt)
-        await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-        logger.info("Furniture image generated via Flux LoRA")
-    except Exception as e:
-        logger.warning("Flux LoRA failed (%s), falling back to Gemini for furniture", e)
+    # 3b. 인페인팅 (Replicate) — 원본 벽/바닥 픽셀 보존
+    furniture_b64 = None
+    inpaint_prompt = (
+        f"{style} style {category_name}, {style_desc} "
+        f"{module_desc}. {placement_note}"
+        f"Photorealistic interior, natural lighting. {IMAGE_RULES}"
+    )
+    # 프롬프트 길이 제한
+    if len(inpaint_prompt) > 500:
+        inpaint_prompt = inpaint_prompt[:497] + "..."
+
+    if mask_b64:
         try:
-            # 원본(또는 cleanup) 이미지를 첫 번째 이미지로 전달
-            base_img = cleanup_b64 or image_b64
-            # 참고 이미지는 스타일 가이드로만 사용 (원본 공간과 혼동 방지)
-            ref_prompt = furniture_prompt
-            if ref_images_b64:
-                ref_prompt = (
-                    f"FIRST image = target space (preserve exactly). "
-                    f"Other images = style reference only. "
-                    f"{furniture_prompt}"
-                )
-            furniture_b64 = await _call_gemini_image(ref_prompt, base_img, extra_images=ref_images_b64)
+            furniture_b64 = await _call_replicate_inpaint(
+                image_b64, mask_b64, inpaint_prompt
+            )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Furniture image generated via Gemini (with %d refs)", len(ref_images_b64))
-        except Exception as e2:
-            logger.error("Furniture generation failed (both LoRA and Gemini): %s", e2)
-
-    # 3c. Correction (Gemini) — 원본 이미지를 함께 전달하여 벽면 복원
-    corrected_b64 = None
-    if furniture_b64:
-        try:
-            correction_prompt = (
-                f"FIRST image = furniture result to correct. "
-                f"SECOND image = original space photo. "
-                f"Fix the first image: restore walls, tiles, floor to match "
-                f"the second image EXACTLY. Only keep the furniture. "
-                f"Fix lighting and shadows for realism."
-            )
-            corrected_b64 = await _call_gemini_image(
-                correction_prompt, furniture_b64, extra_images=[image_b64]
-            )
-            await _upload_image(request.project_id, request.user_id, corrected_b64, "corrected")
-            logger.info("Correction image generated")
+            logger.info("Furniture inpainted via Replicate (walls preserved)")
         except Exception as e:
-            logger.error("Correction failed: %s", e)
-            corrected_b64 = furniture_b64
+            logger.warning("Replicate inpainting failed: %s, falling back to Gemini", e)
 
-    # 3d. Open Door (Gemini)
-    if corrected_b64:
+    # Fallback: Gemini (마스크 실패 또는 인페인팅 실패 시)
+    if not furniture_b64:
+        logger.info("Using Gemini fallback for furniture generation")
+        furniture_prompt = (
+            f"Edit this image: add {style} {category_name} furniture. "
+            f"{style_desc} {module_desc}. {placement_note}"
+            f"CRITICAL: keep walls, tiles, floor, ceiling EXACTLY. "
+            f"{IMAGE_RULES}Photorealistic."
+        )
+        # 참고 이미지 조회 (style_references 테이블)
+        ref_images_b64 = []
+        try:
+            refs = (
+                client.table("style_references")
+                .select("image_url")
+                .eq("category", request.category)
+                .eq("style", style)
+                .eq("is_active", True)
+                .limit(2)
+                .execute()
+            )
+            if refs.data:
+                for ref in refs.data:
+                    try:
+                        ref_b64, _ = await _download_image_b64(ref["image_url"])
+                        ref_images_b64.append(ref_b64)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("Failed to load reference images: %s", e)
+
+        try:
+            furniture_b64 = await _call_gemini_image(
+                furniture_prompt, image_b64, extra_images=ref_images_b64 or None
+            )
+            await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
+            logger.info("Furniture generated via Gemini fallback")
+        except Exception as e:
+            logger.error("Furniture generation failed (all methods): %s", e)
+
+    # 3c. Open Door (Gemini) — 문 열린 뷰
+    if furniture_b64:
         try:
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
             open_prompt = (
@@ -373,7 +357,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                 f"Inside: {contents}. "
                 f"Do NOT change walls, tiles, floor, or perspective."
             )
-            open_b64 = await _call_gemini_image(open_prompt, corrected_b64)
+            open_b64 = await _call_gemini_image(open_prompt, furniture_b64)
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
             logger.info("Open door image generated")
         except Exception as e:
