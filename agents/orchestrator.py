@@ -161,9 +161,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     try:
         client.table("space_analyses").insert({
             "project_id": request.project_id,
-            "analysis_data": space_result,
-            "wall_width_mm": space_result.get("wall_dimensions_mm", {}).get("width", 3000),
-            "wall_height_mm": space_result.get("wall_dimensions_mm", {}).get("height", 2400),
+            "original_image_url": request.image_url,
+            "analysis_json": space_result,
+            "walls": space_result.get("wall_dimensions_mm"),
+            "pipes": space_result.get("utility_positions"),
+            "space_summary": f"Wall {space_result.get('wall_dimensions_mm', {}).get('width', 3000)}mm x {space_result.get('wall_dimensions_mm', {}).get('height', 2400)}mm",
+            "confidence": space_result.get("confidence", 0.7),
         }).execute()
     except Exception as e:
         logger.warning("Failed to save space analysis: %s", e)
@@ -200,7 +203,8 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     try:
         client.table("layouts").insert({
             "project_id": request.project_id,
-            "layout_data": layout_data,
+            "layout_json": layout_data,
+            "modules": layout_data.get("modules", []),
             "total_width_mm": layout_data.get("total_width", wall_width),
         }).execute()
     except Exception as e:
@@ -227,7 +231,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         logger.error("Cleanup generation failed: %s", e)
         cleanup_b64 = image_b64  # 원본으로 대체
 
-    # 3b. Furniture (Flux LoRA)
+    # 3b. Furniture (Flux LoRA → Gemini fallback)
     furniture_b64 = None
     try:
         module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
@@ -237,9 +241,21 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         )
         furniture_b64 = await _call_flux_lora(request.category, furniture_prompt)
         await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-        logger.info("Furniture image generated")
+        logger.info("Furniture image generated via Flux LoRA")
     except Exception as e:
-        logger.error("Furniture generation failed: %s", e)
+        logger.warning("Flux LoRA failed (%s), falling back to Gemini for furniture", e)
+        try:
+            category_name = CATEGORIES.get(request.category, request.category)
+            gemini_furniture_prompt = (
+                f"Generate photorealistic {style} style Korean {category_name} furniture. "
+                f"{module_desc}. Clean modern interior, natural lighting."
+            )
+            base_img = cleanup_b64 or image_b64
+            furniture_b64 = await _call_gemini_image(gemini_furniture_prompt, base_img)
+            await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
+            logger.info("Furniture image generated via Gemini fallback")
+        except Exception as e2:
+            logger.error("Furniture generation failed (both LoRA and Gemini): %s", e2)
 
     # 3c. Correction (Gemini)
     corrected_b64 = None
@@ -312,8 +328,11 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
         client.table("quotes").insert({
             "project_id": request.project_id,
-            "quote_data": quote_data,
-            "total_amount": total,
+            "items_json": quote_data,
+            "subtotal": subtotal,
+            "installation_fee": installation,
+            "tax_amount": vat,
+            "total_price": total,
         }).execute()
 
         logger.info("Quote: %s KRW", f"{total:,}")
