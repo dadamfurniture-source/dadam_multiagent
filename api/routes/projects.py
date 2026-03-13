@@ -167,9 +167,26 @@ async def get_project(
     quotes = client.table("quotes").select("*").eq("project_id", project_id).order("created_at", desc=True).limit(1).execute()
     analyses = client.table("space_analyses").select("*").eq("project_id", project_id).order("created_at", desc=True).limit(1).execute()
 
+    # originals 버킷(private)의 이미지는 signed URL로 변환
+    images_data = images.data or []
+    for img in images_data:
+        url = img.get("image_url", "")
+        if "/object/public/originals/" in url or "/object/originals/" in url:
+            try:
+                path_part = url.split("/object/")[1]
+                if path_part.startswith("public/"):
+                    path_part = path_part[7:]
+                parts = path_part.split("/", 1)
+                if len(parts) == 2:
+                    file_path = parts[1].rstrip("?")
+                    signed = client.storage.from_("originals").create_signed_url(file_path, 3600)
+                    img["image_url"] = signed.get("signedURL", signed.get("signedUrl", url))
+            except Exception as e:
+                logger.warning("Failed to sign original image URL: %s", e)
+
     data = {
         "project": project.data,
-        "images": images.data,
+        "images": images_data,
         "layout": layouts.data[0] if layouts.data else None,
         "quote": quotes.data[0] if quotes.data else None,
         "space_analysis": analyses.data[0] if analyses.data else None,
