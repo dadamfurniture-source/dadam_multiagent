@@ -178,8 +178,8 @@ def _create_furniture_mask(
     # Category + wall_layout에 따른 마스크 영역 설정
     if category in ("sink", "island"):
         if wall_layout == "straight":
-            # 1자 싱크대: 정면 벽 하단만, 좌우 10% 여백 (측면 벽 보존)
-            mask_region = (0.10, 0.35, 0.90, 0.92)
+            # 1자 싱크대: 정면 벽만, 좌우 15% 여백 (측면 벽에 가구 침범 방지)
+            mask_region = (0.15, 0.35, 0.85, 0.92)
         elif wall_layout == "L-shape":
             # L자: 넓은 영역
             mask_region = (0.05, 0.35, 0.95, 0.92)
@@ -273,6 +273,7 @@ async def _call_replicate_inpaint(
     image_b64: str,
     mask_b64: str,
     prompt: str,
+    negative_prompt: str = "",
     model: str = "stability-ai/stable-diffusion-inpainting",
 ) -> str:
     """Call Replicate inpainting model, then composite onto original.
@@ -287,10 +288,13 @@ async def _call_replicate_inpaint(
     image_uri = _image_b64_to_data_uri(image_b64)
     mask_uri = _image_b64_to_data_uri(mask_b64)
 
+    neg = negative_prompt or "L-shaped, corner cabinet, wraparound, distorted walls"
+
     input_data = {
         "image": image_uri,
         "mask": mask_uri,
         "prompt": prompt,
+        "negative_prompt": neg,
         "num_inference_steps": 50,
         "guidance_scale": 7.5,
     }
@@ -305,7 +309,7 @@ async def _call_replicate_inpaint(
                 "mask": mask_uri,
                 "prompt": prompt,
                 "steps": 50,
-                "guidance": 7.5,
+                "guidance": 30,
                 "output_format": "png",
             },
         },

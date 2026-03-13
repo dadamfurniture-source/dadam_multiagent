@@ -268,7 +268,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     wall_layout = space_result.get("wall_layout", "straight")
     layout_desc = ""
     if wall_layout == "straight":
-        layout_desc = "STRAIGHT single wall layout (1자). All cabinets along one wall only. "
+        layout_desc = (
+            "STRAIGHT single-wall layout ONLY. All cabinets in a flat line on ONE wall. "
+            "NO L-shape, NO corner wrapping, NO side-wall cabinets. "
+        )
     elif wall_layout == "L-shape":
         layout_desc = "L-shaped corner layout. Cabinets wrap around the corner. "
     elif wall_layout == "U-shape":
@@ -309,10 +312,15 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     if len(inpaint_prompt) > 500:
         inpaint_prompt = inpaint_prompt[:497] + "..."
 
+    # straight 레이아웃에 대한 네거티브 프롬프트
+    neg_prompt = ""
+    if wall_layout == "straight":
+        neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled, two-wall, side wall cabinets"
+
     if mask_b64:
         try:
             furniture_b64 = await _call_replicate_inpaint(
-                image_b64, mask_b64, inpaint_prompt
+                image_b64, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
             logger.info("Furniture inpainted via Replicate (walls preserved)")
