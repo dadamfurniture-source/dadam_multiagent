@@ -314,6 +314,7 @@ async def stream_project(
     ?token=xxx 쿼리 파라미터로 인증.
     """
     if not token:
+        logger.warning("SSE stream: no token provided")
         raise HTTPException(401, "인증이 필요합니다.")
 
     # 토큰으로 사용자 확인
@@ -321,11 +322,14 @@ async def stream_project(
         client_auth = get_service_client()
         user_response = client_auth.auth.get_user(token)
         if not user_response or not user_response.user:
+            logger.warning("SSE stream: get_user returned empty (token=%s...)", token[:20])
             raise HTTPException(401, "유효하지 않은 토큰입니다.")
         user_id = user_response.user.id
+        logger.info("SSE stream: authenticated user %s", user_id)
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
+        logger.warning("SSE stream: auth exception: %s (token=%s...)", e, token[:20] if token else "None")
         raise HTTPException(401, "인증 실패")
 
     client = get_service_client()

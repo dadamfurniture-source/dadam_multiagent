@@ -342,9 +342,41 @@ function initProjectPage() {
   };
 
   eventSource.onerror = () => {
+    console.warn('SSE connection failed, switching to polling');
     eventSource.close();
-    loadProjectResult(projectId);
+    // Fallback: poll project status every 3s
+    startPolling(projectId);
   };
+}
+
+function startPolling(projectId) {
+  const pollInterval = setInterval(async () => {
+    try {
+      const resp = await apiFetch(`${API_BASE}/projects/${projectId}`);
+      if (!resp.ok) return;
+      const result = await resp.json();
+      const project = result.data?.project;
+      if (!project) return;
+
+      const stage = project.pipeline_stage || '';
+      updateStatus(stage);
+      if (stage === 'space_analysis') setStageActive('space_analysis');
+      if (stage === 'design') { setStageDone('space_analysis'); setStageActive('design'); }
+      if (stage === 'image_gen') { setStageDone('space_analysis'); setStageDone('design'); setStageActive('image_gen'); }
+      if (stage === 'quote') { setStageDone('space_analysis'); setStageDone('design'); setStageDone('image_gen'); setStageActive('quote'); }
+
+      if (project.status === 'completed' || stage === 'completed') {
+        clearInterval(pollInterval);
+        setStageDone('quote');
+        loadProjectResult(projectId);
+      } else if (project.status === 'failed') {
+        clearInterval(pollInterval);
+        showError('시뮬레이션 처리 중 오류가 발생했습니다.');
+      }
+    } catch (e) {
+      console.error('Polling error:', e);
+    }
+  }, 3000);
 }
 
 function setStageActive(stage) {
