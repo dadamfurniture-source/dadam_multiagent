@@ -303,11 +303,11 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     }.get(style, "white flat-panel")
 
     furniture_prompt = (
-        f"Remove all objects, people, clothes, debris. "
-        f"Install {layout_desc}{style_short} {category_name}. "
-        f"Upper cabinets flush ceiling, lower cabinets with countertop. "
+        f"Remove ALL objects, people, clothes, tools, debris from this photo. "
+        f"Then install {layout_desc}{style_short} {category_name}. "
+        f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
         f"{placement_note}"
-        f"Keep walls, tiles, floor EXACTLY. Photorealistic."
+        f"PRESERVE original walls, tiles, floor, ceiling EXACTLY. Photorealistic."
     )
     if len(furniture_prompt) > 500:
         furniture_prompt = furniture_prompt[:497] + "..."
