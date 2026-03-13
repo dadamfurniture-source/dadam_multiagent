@@ -215,8 +215,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     wall_width = space_result.get("wall_dimensions_mm", {}).get("width", 3000)
     utilities = space_result.get("utility_positions", {})
-    sink_pos = utilities.get("water_supply", {}).get("position_mm")
-    cooktop_pos = utilities.get("exhaust_duct", {}).get("position_mm")
+    # Claude Vision 출력 키: from_origin_mm (position_mm이 아님)
+    water_supply = utilities.get("water_supply", {})
+    exhaust_duct = utilities.get("exhaust_duct", {})
+    sink_pos = water_supply.get("from_origin_mm") or water_supply.get("position_mm")
+    cooktop_pos = exhaust_duct.get("from_origin_mm") or exhaust_duct.get("position_mm")
+    logger.info("Utility positions — sink: %s, cooktop: %s", sink_pos, cooktop_pos)
 
     try:
         layout_data = plan_layout(
