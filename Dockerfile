@@ -3,9 +3,10 @@ FROM python:3.11-slim AS base
 WORKDIR /app
 
 # System deps + Blender 4.2 headless
+# libgl1-mesa-glx → libgl1 / libegl1-mesa → libegl1 on Debian Trixie+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl xz-utils libxi6 libxxf86vm1 libxfixes3 libxrender1 \
-    libgl1-mesa-glx libglib2.0-0 libegl1-mesa libxkbcommon0 && \
+    libgl1 libglib2.0-0 libegl1 libxkbcommon0 && \
     curl -L https://mirror.clarkson.edu/blender/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz \
     | tar xJ -C /opt/ && \
     ln -s /opt/blender-4.2.0-linux-x64/blender /usr/local/bin/blender && \
