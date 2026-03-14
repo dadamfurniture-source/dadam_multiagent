@@ -159,106 +159,82 @@ async def test_renderer_success_returns_base64():
 
 
 # ═══════════════════════════════════════════════════════════════
-# 2. Compositor — alpha compositing (PIL only)
+# 2. Compositor — render-guided generation
 # ═══════════════════════════════════════════════════════════════
 
 
-def test_alpha_composite_basic():
-    """_alpha_composite merges RGBA overlay onto RGB background."""
-    from agents.tools.compositor_tools import _alpha_composite
-
-    bg = _make_test_image(200, 150, color=(50, 50, 50))
-    overlay = _make_rgba_image(200, 150, color=(255, 0, 0), alpha=128)
-
-    result_b64 = _alpha_composite(bg, overlay)
-
-    # Should return valid base64 PNG
-    decoded = base64.b64decode(result_b64)
-    img = Image.open(io.BytesIO(decoded))
-    assert img.mode == "RGB"
-    assert img.size == (200, 150)
-
-    # Center pixel should be reddish (blend of gray bg + semi-transparent red)
-    px = img.getpixel((100, 75))
-    assert px[0] > px[1], f"Red channel should dominate: {px}"
-
-
-def test_alpha_composite_size_mismatch():
-    """_alpha_composite resizes overlay to match background."""
-    from agents.tools.compositor_tools import _alpha_composite
-
-    bg = _make_test_image(400, 300, color=(50, 50, 50))
-    overlay = _make_rgba_image(200, 150, color=(255, 0, 0), alpha=200)
-
-    result_b64 = _alpha_composite(bg, overlay)
-    img = Image.open(io.BytesIO(base64.b64decode(result_b64)))
-    assert img.size == (400, 300), "Output should match background size"
-
-
-def test_alpha_composite_fully_transparent():
-    """Fully transparent overlay should leave background unchanged."""
-    from agents.tools.compositor_tools import _alpha_composite
-
-    bg = _make_test_image(100, 100, color=(42, 42, 42))
-    overlay = _make_rgba_image(100, 100, color=(255, 0, 0), alpha=0)
-
-    result_b64 = _alpha_composite(bg, overlay)
-    img = Image.open(io.BytesIO(base64.b64decode(result_b64)))
-    px = img.getpixel((50, 50))
-    # Should be close to original (minor diff from feathering is OK)
-    assert abs(px[0] - 42) < 5, f"Should be near-original gray: {px}"
-
-
 @pytest.mark.asyncio
-async def test_composite_render_onto_photo_gemini_fallback():
-    """composite_render_onto_photo returns raw composite when Gemini fails."""
+async def test_composite_render_onto_photo_calls_gemini():
+    """composite_render_onto_photo sends render as extra image to Gemini."""
     from agents.tools.compositor_tools import composite_render_onto_photo
 
-    bg = _make_test_image(200, 150, color=(80, 80, 80))
-    overlay = _make_rgba_image(200, 150, color=(0, 200, 0), alpha=200)
+    photo = _make_test_image(200, 150, color=(80, 80, 80))
+    render = _make_test_image(200, 150, color=(200, 200, 200))
+    result_img = _make_test_image(200, 150, color=(150, 150, 150))
 
-    with patch("agents.tools.compositor_tools._call_gemini_image", side_effect=Exception("API down")):
+    mock_gemini = AsyncMock(return_value=result_img)
+
+    with patch("agents.tools.compositor_tools._call_gemini_image", mock_gemini):
         result = await composite_render_onto_photo(
-            original_b64=bg,
-            render_b64=overlay,
+            original_b64=photo,
+            render_b64=render,
             style="modern",
             category="sink",
         )
 
-    # Should still return a valid image (raw composite, no harmonization)
-    assert isinstance(result, str)
-    img = Image.open(io.BytesIO(base64.b64decode(result)))
-    assert img.size == (200, 150)
+    mock_gemini.assert_called_once()
+    call_args = mock_gemini.call_args
+    # First arg is prompt, second is original photo
+    assert "3D layout" in call_args[0][0]
+    assert call_args[0][1] == photo
+    # Extra images should include the 3D render
+    assert render in call_args[1]["extra_images"]
+
+
+@pytest.mark.asyncio
+async def test_composite_render_raises_on_gemini_failure():
+    """composite_render_onto_photo propagates error when Gemini fails."""
+    from agents.tools.compositor_tools import composite_render_onto_photo
+
+    photo = _make_test_image(200, 150)
+    render = _make_test_image(200, 150)
+
+    with patch("agents.tools.compositor_tools._call_gemini_image", side_effect=Exception("API down")):
+        with pytest.raises(Exception, match="API down"):
+            await composite_render_onto_photo(
+                original_b64=photo,
+                render_b64=render,
+                style="modern",
+                category="sink",
+            )
 
 
 @pytest.mark.asyncio
 async def test_composite_render_with_ref_images():
-    """composite_render_onto_photo passes reference images to Gemini."""
+    """composite_render_onto_photo includes style refs alongside 3D render."""
     from agents.tools.compositor_tools import composite_render_onto_photo
 
-    bg = _make_test_image(200, 150)
-    overlay = _make_rgba_image(200, 150, color=(200, 200, 200), alpha=200)
+    photo = _make_test_image(200, 150)
+    render = _make_test_image(200, 150, color=(200, 200, 200))
     ref1 = _make_test_image(100, 100, color=(255, 0, 0))
-    ref2 = _make_test_image(100, 100, color=(0, 0, 255))
 
-    harmonized = _make_test_image(200, 150, color=(180, 180, 180))
-
-    mock_gemini = AsyncMock(return_value=harmonized)
+    result_img = _make_test_image(200, 150)
+    mock_gemini = AsyncMock(return_value=result_img)
 
     with patch("agents.tools.compositor_tools._call_gemini_image", mock_gemini):
-        result = await composite_render_onto_photo(
-            original_b64=bg,
-            render_b64=overlay,
+        await composite_render_onto_photo(
+            original_b64=photo,
+            render_b64=render,
             style="nordic",
             category="sink",
-            reference_images=[ref1, ref2],
+            reference_images=[ref1],
         )
 
-    # Verify Gemini was called with extra_images
-    mock_gemini.assert_called_once()
     call_kwargs = mock_gemini.call_args
-    assert call_kwargs[1]["extra_images"] == [ref1, ref2]
-    assert "reference images" in call_kwargs[0][0].lower()
+    extra = call_kwargs[1]["extra_images"]
+    # Should have 3D render first, then style ref
+    assert extra[0] == render
+    assert extra[1] == ref1
 
 
 # ═══════════════════════════════════════════════════════════════

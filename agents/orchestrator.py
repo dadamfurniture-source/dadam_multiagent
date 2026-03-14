@@ -353,7 +353,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         try:
             from agents.blender import render_cabinet_scene
 
-            # Render closed doors
+            # Render closed doors (3D reference image)
             closed_render = await render_cabinet_scene(
                 layout_data=layout_data,
                 camera_params=camera_params,
@@ -373,36 +373,29 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender open-door render complete")
 
-            # Cleanup original (remove existing furniture/clutter)
-            cleanup_prompt = (
-                "Remove all furniture, objects, people, clothes, debris. "
-                "Show only clean empty room with bare walls and floor. "
-                "Keep wall color, tiles, lighting EXACTLY."
-            )
-            cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
-            logger.info("Cleanup complete for Blender composite")
-
-            # Composite + Harmonize (closed doors)
+            # Generate furniture image: Gemini uses 3D render as layout reference
+            # (no alpha composite — Gemini generates directly from original photo
+            #  with 3D render as guide for exact module positions)
             furniture_b64 = await composite_render_onto_photo(
-                cleanup_b64,
+                image_b64,
                 closed_render,
                 style,
                 request.category,
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Blender furniture composite+harmonize complete")
+            logger.info("Blender-guided furniture generation complete")
 
-            # Composite + Harmonize (open doors)
+            # Generate open door image with 3D open render as guide
             open_b64 = await composite_render_onto_photo(
-                cleanup_b64,
+                image_b64,
                 open_render,
                 style,
                 request.category,
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
-            logger.info("Blender open-door composite+harmonize complete")
+            logger.info("Blender-guided open-door generation complete")
 
         except Exception as e:
             logger.warning("Blender pipeline failed: %s, falling back to Gemini-only", e)

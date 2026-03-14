@@ -1,14 +1,13 @@
-"""Camera matching — converts Vision-estimated camera params to Blender camera.
+"""Camera setup for cabinet layout reference renders.
 
-The camera parameters come from Claude Vision's space analysis (STEP 6).
-Perfect accuracy isn't required since AI compositor corrects minor mismatches.
+Since the render is used as a REFERENCE IMAGE (not pixel-aligned composite),
+we use a simple front-facing orthographic-like view that clearly shows
+the full cabinet layout from wall edge to wall edge.
 """
-
-import math
 
 import bpy
 
-# Default camera parameters (typical Korean apartment kitchen photo)
+# Default camera parameters
 DEFAULT_CAMERA = {
     "camera_height_mm": 1300,
     "camera_distance_mm": 3000,
@@ -18,59 +17,41 @@ DEFAULT_CAMERA = {
 
 
 def setup_camera(camera_params, wall_width=3000, wall_height=2400):
-    """Set up Blender camera to match the original photo's perspective.
+    """Set up camera for a clean front-facing view of the full cabinet layout.
+
+    Uses orthographic camera to show exact proportions without perspective
+    distortion. This makes it easier for Gemini to understand the layout.
 
     Args:
-        camera_params: Dict with camera_height_mm, camera_distance_mm,
-                       camera_tilt_deg, focal_length_mm
-        wall_width: Total wall width (mm) for centering
-        wall_height: Wall height (mm) for reference
+        camera_params: Dict (currently unused, kept for API compat)
+        wall_width: Total wall width (mm)
+        wall_height: Wall height (mm)
 
     Returns:
         Blender camera object
     """
-    params = {**DEFAULT_CAMERA}
-    if camera_params:
-        params.update({k: v for k, v in camera_params.items() if v is not None})
-
-    # Camera position: centered on wall, at specified distance and height
-    cam_x = wall_width / 2
-    cam_y = params["camera_distance_mm"]  # positive = in front of wall
-    cam_z = params["camera_height_mm"]
-
-    # Create camera
     cam_data = bpy.data.cameras.new("SceneCamera")
-    cam_data.lens = params["focal_length_mm"]
-    cam_data.sensor_width = 36  # standard 35mm sensor
+
+    # Use orthographic for clean reference render
+    cam_data.type = "ORTHO"
+    # Scale to fit the wall width with some padding
+    padding = 100  # mm on each side
+    cam_data.ortho_scale = max(wall_width + padding * 2, wall_height + padding * 2)
 
     cam_obj = bpy.data.objects.new("SceneCamera", cam_data)
     bpy.context.scene.collection.objects.link(cam_obj)
 
-    # Position camera (Blender: Y is depth, negative is towards camera)
-    cam_obj.location = (cam_x, cam_y, cam_z)
+    # Position: centered on wall, looking straight at it
+    cam_obj.location = (
+        wall_width / 2,   # centered horizontally
+        5000,             # far enough in front
+        wall_height / 2,  # centered vertically
+    )
 
-    # Point camera at wall center
-    target_x = wall_width / 2
-    target_y = 0  # wall is at Y=0
-    target_z = wall_height / 2
+    # Point straight at the wall (rotate to face -Y direction)
+    import math
 
-    # Calculate rotation to look at target
-    dx = target_x - cam_x
-    dy = target_y - cam_y
-    dz = target_z - cam_z
+    cam_obj.rotation_euler = (math.radians(90), 0, 0)
 
-    # Rotation: camera looks down -Z in its local space
-    # We need to rotate it to face the wall
-    rot_x = math.atan2(math.sqrt(dx**2 + dy**2), -dz) - math.pi
-    rot_z = math.atan2(dx, -dy)
-
-    # Apply tilt adjustment
-    tilt_rad = math.radians(params["camera_tilt_deg"])
-    rot_x += tilt_rad
-
-    cam_obj.rotation_euler = (rot_x, 0, rot_z)
-
-    # Set as active camera
     bpy.context.scene.camera = cam_obj
-
     return cam_obj
