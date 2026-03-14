@@ -6,7 +6,8 @@ WORKDIR /app
 # libgl1-mesa-glx → libgl1 / libegl1-mesa → libegl1 on Debian Trixie+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl xz-utils libxi6 libxxf86vm1 libxfixes3 libxrender1 \
-    libgl1 libglib2.0-0 libegl1 libxkbcommon0 && \
+    libgl1 libglib2.0-0 libegl1 libxkbcommon0 \
+    libsm6 libice6 libx11-6 libxext6 && \
     curl -L https://mirror.clarkson.edu/blender/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz \
     | tar xJ -C /opt/ && \
     ln -s /opt/blender-4.2.0-linux-x64/blender /usr/local/bin/blender && \
