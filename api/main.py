@@ -105,6 +105,60 @@ async def health():
     return {"status": "ok", "service": "dadam-saas", "version": "0.1.0"}
 
 
+@app.get("/debug/blender")
+async def debug_blender():
+    """Check if Blender is available and functional."""
+    import asyncio
+    import os
+    import shutil
+
+    result = {
+        "use_blender_env": os.environ.get("USE_BLENDER", "true"),
+        "blender_in_path": shutil.which("blender") is not None,
+        "blender_path": shutil.which("blender"),
+    }
+
+    # Try running blender --version
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "blender",
+            "--version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        result["blender_version"] = stdout.decode().strip().split("\n")[0]
+        result["blender_rc"] = proc.returncode
+    except Exception as e:
+        result["blender_error"] = str(e)
+
+    # Try a minimal render
+    try:
+        from agents.blender.renderer import render_cabinet_scene
+
+        test_layout = {
+            "modules": [
+                {"type": "cabinet", "width": 450, "is_2door": False, "position_x": 0},
+            ],
+            "wall_width": 450,
+        }
+        b64 = await render_cabinet_scene(
+            layout_data=test_layout,
+            camera_params={},
+            style="modern",
+            category="sink",
+            door_state="closed",
+            timeout=15,
+        )
+        result["render_test"] = "success"
+        result["render_size_bytes"] = len(b64) * 3 // 4  # approx decoded size
+    except Exception as e:
+        result["render_test"] = "failed"
+        result["render_error"] = str(e)
+
+    return result
+
+
 # Static files & HTML pages
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
