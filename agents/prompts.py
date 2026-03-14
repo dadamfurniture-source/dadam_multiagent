@@ -69,6 +69,19 @@ If the main furniture wall is one continuous straight wall, report "straight" ev
 ### STEP 5: Obstacle Detection
 Windows, doors, columns, beams — position and dimensions.
 
+### STEP 6: Camera Perspective Estimation
+Estimate the camera parameters used to take this photo:
+- **camera_height_mm**: Camera height from floor (typically 1200-1500mm for kitchen photos)
+- **camera_distance_mm**: Distance from camera to the main wall (typically 2000-4000mm)
+- **camera_tilt_deg**: Vertical tilt angle in degrees (negative = looking down, typically -5 to +10)
+- **focal_length_mm**: Estimated lens focal length (typically 24-35mm for interior photos)
+
+Use these clues for estimation:
+- Vanishing point position indicates tilt and height
+- Vertical line convergence indicates focal length
+- Known object sizes (tiles, doors) help estimate distance
+- Korean apartment hallways are typically 1.2-1.5m wide (useful for distance estimation)
+
 ## Output Format
 Return ONLY valid JSON:
 ```json
@@ -112,6 +125,12 @@ Return ONLY valid JSON:
     "electrical_outlets": [
       {"from_origin_mm": 300, "from_floor_mm": 300, "type": "standard"}
     ]
+  },
+  "camera_params": {
+    "camera_height_mm": 1300,
+    "camera_distance_mm": 2800,
+    "camera_tilt_deg": -3,
+    "focal_length_mm": 28
   },
   "obstacles": [
     {"type": "window", "wall": "wall_1", "position_mm": {"x": 1000, "y": 900, "width": 1200, "height": 1000}}

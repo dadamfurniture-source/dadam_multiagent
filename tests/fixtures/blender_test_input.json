@@ -1,0 +1,21 @@
+{
+  "modules": [
+    {"type": "cabinet", "width": 450, "is_2door": false, "position_x": 0, "door_width": 450},
+    {"type": "sink_bowl", "width": 800, "is_2door": false, "position_x": 450, "door_width": 800},
+    {"type": "cabinet", "width": 900, "is_2door": true, "position_x": 1250, "door_width": 450},
+    {"type": "cooktop", "width": 600, "is_2door": false, "position_x": 2150, "door_width": 600},
+    {"type": "cabinet", "width": 450, "is_2door": false, "position_x": 2750, "door_width": 450}
+  ],
+  "wall_width": 3200,
+  "category": "sink",
+  "style": "modern",
+  "door_state": "closed",
+  "camera_params": {
+    "camera_height_mm": 1300,
+    "camera_distance_mm": 3000,
+    "camera_tilt_deg": -2,
+    "focal_length_mm": 28
+  },
+  "resolution": [1024, 768],
+  "output_path": "/tmp/blender_test_output.png"
+}

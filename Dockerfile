@@ -2,10 +2,17 @@ FROM python:3.11-slim AS base
 
 WORKDIR /app
 
-# System deps
+# System deps + Blender 4.2 headless
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && \
+    curl xz-utils libxi6 libxxf86vm1 libxfixes3 libxrender1 \
+    libgl1-mesa-glx libglib2.0-0 libegl1-mesa libxkbcommon0 && \
+    curl -L https://mirror.clarkson.edu/blender/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz \
+    | tar xJ -C /opt/ && \
+    ln -s /opt/blender-4.2.0-linux-x64/blender /usr/local/bin/blender && \
     rm -rf /var/lib/apt/lists/*
+
+# Software rendering (no GPU required)
+ENV LIBGL_ALWAYS_SOFTWARE=1
 
 # Python deps
 COPY requirements.txt .

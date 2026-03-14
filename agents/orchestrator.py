@@ -7,6 +7,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import AsyncGenerator
 
@@ -17,6 +18,7 @@ from agents.tools.image_tools import (
     _call_replicate_inpaint,
     _create_furniture_mask,
 )
+from agents.tools.compositor_tools import composite_render_onto_photo
 from agents.tools.pricing_tools import (
     BASE_PRICES,
     COUNTERTOP_PRICES,
@@ -65,6 +67,37 @@ IMAGE_RULES = (
     "Cabinets under cooktop/induction area must be DRAWERS (not doors). "
     "Keep original wall tiles exactly. "
 )
+
+
+async def _fetch_reference_images(category: str, style: str, limit: int = 2) -> list[str]:
+    """Fetch matching reference images from style_references table.
+
+    Returns base64-encoded images for the given category+style combination.
+    Used to guide Blender materials and AI harmonization.
+    """
+    try:
+        client = get_service_client()
+        refs = (
+            client.table("style_references")
+            .select("image_url")
+            .eq("category", category)
+            .eq("style", style)
+            .eq("is_active", True)
+            .limit(limit)
+            .execute()
+        )
+
+        result = []
+        for ref in refs.data:
+            try:
+                b64, _ = await _download_image_b64(ref["image_url"])
+                result.append(b64)
+            except Exception as e:
+                logger.warning("Failed to download reference image: %s", e)
+        return result
+    except Exception as e:
+        logger.warning("Failed to fetch reference images: %s", e)
+        return []
 
 
 @dataclass
@@ -256,7 +289,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     yield {"type": "progress", "content": "layout design complete"}
 
-    # ─── 3. 이미지 생성 (Cleanup → Mask → Inpaint → Open) ───
+    # ─── 3. 이미지 생성 (Blender 3D → AI Compositor, fallback: Gemini-only) ───
     yield {"type": "progress", "content": "image generation started"}
     _update_stage(request.project_id, "image_gen")
 
@@ -292,71 +325,135 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             placement_note = ". ".join(parts) + ". "
         placement_note += "No tall cabinets. "
 
-    # 3a. Furniture (Gemini) — 원본에서 잡동사니 제거 + 가구 설치를 한 번에
-    # 프롬프트를 간결하게 유지 (<300자 목표)하여 Gemini 안정성 확보
     furniture_b64 = None
+    open_b64 = None
 
-    # 간결한 통합 프롬프트 (cleanup + furniture 동시)
-    style_short = {
-        "modern": "white flat-panel",
-        "nordic": "light wood grain",
-        "classic": "warm brown wood panel",
-        "natural": "natural wood matte",
-        "industrial": "dark charcoal matte",
-        "luxury": "high-gloss pearl white",
-    }.get(style, "white flat-panel")
+    # ── 2.5 참고 이미지 조회 (category + style 매칭) ──
+    ref_images = await _fetch_reference_images(request.category, style)
+    if ref_images:
+        logger.info("Found %d reference images for %s/%s", len(ref_images), request.category, style)
 
-    furniture_prompt = (
-        f"Remove ALL objects, people, clothes, tools, debris from this photo. "
-        f"Then install {layout_desc}{style_short} {category_name}. "
-        f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
-        f"{placement_note}"
-        f"PRESERVE original walls, tiles, floor, ceiling EXACTLY. Photorealistic."
-    )
-    if len(furniture_prompt) > 500:
-        furniture_prompt = furniture_prompt[:497] + "..."
-    logger.info("Furniture prompt (%d chars): %s", len(furniture_prompt), furniture_prompt[:200])
+    # ── 3a. Blender 3D Rendering Pipeline ──
+    use_blender = os.environ.get("USE_BLENDER", "true").lower() == "true"
+    camera_params = space_result.get("camera_params", {})
 
-    try:
-        furniture_b64 = await _call_gemini_image(furniture_prompt, image_b64)
-        await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-        logger.info("Furniture generated via Gemini (single-step cleanup+install)")
-    except Exception as e:
-        logger.warning("Gemini furniture failed: %s, trying Replicate inpaint", e)
-
-    # Fallback: Cleanup → Replicate 인페인팅 (Gemini 실패 시)
-    if not furniture_b64:
+    if use_blender:
         try:
-            # Cleanup first
+            from agents.blender import render_cabinet_scene
+
+            # Render closed doors
+            closed_render = await render_cabinet_scene(
+                layout_data=layout_data,
+                camera_params=camera_params,
+                style=style,
+                category=request.category,
+                door_state="closed",
+            )
+            logger.info("Blender closed-door render complete")
+
+            # Render open doors (same scene, only door rotation changes)
+            open_render = await render_cabinet_scene(
+                layout_data=layout_data,
+                camera_params=camera_params,
+                style=style,
+                category=request.category,
+                door_state="open",
+            )
+            logger.info("Blender open-door render complete")
+
+            # Cleanup original (remove existing furniture/clutter)
             cleanup_prompt = (
                 "Remove all furniture, objects, people, clothes, debris. "
                 "Show only clean empty room with bare walls and floor. "
                 "Keep wall color, tiles, lighting EXACTLY."
             )
             cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
-            mask_b64 = _create_furniture_mask(
-                cleanup_b64, request.category, space_result
-            )
-            neg_prompt = ""
-            if wall_layout == "straight":
-                neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled"
-            inpaint_prompt = (
-                f"{layout_desc}{style} style {category_name}, "
-                f"{module_desc}. {placement_note}"
-                f"Photorealistic interior. {IMAGE_RULES}"
-            )
-            if len(inpaint_prompt) > 500:
-                inpaint_prompt = inpaint_prompt[:497] + "..."
-            furniture_b64 = await _call_replicate_inpaint(
-                cleanup_b64, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
+            logger.info("Cleanup complete for Blender composite")
+
+            # Composite + Harmonize (closed doors)
+            furniture_b64 = await composite_render_onto_photo(
+                cleanup_b64, closed_render, style, request.category,
+                reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Furniture generated via Replicate fallback")
-        except Exception as e:
-            logger.error("Furniture generation failed (all methods): %s", e)
+            logger.info("Blender furniture composite+harmonize complete")
 
-    # 3c. Open Door (Gemini) — 문 열린 뷰
-    if furniture_b64:
+            # Composite + Harmonize (open doors)
+            open_b64 = await composite_render_onto_photo(
+                cleanup_b64, open_render, style, request.category,
+                reference_images=ref_images,
+            )
+            await _upload_image(request.project_id, request.user_id, open_b64, "open")
+            logger.info("Blender open-door composite+harmonize complete")
+
+        except Exception as e:
+            logger.warning("Blender pipeline failed: %s, falling back to Gemini-only", e)
+            furniture_b64 = None
+            open_b64 = None
+
+    # ── 3b. Fallback: Gemini-only pipeline (existing code, preserved 100%) ──
+    if not furniture_b64:
+        style_short = {
+            "modern": "white flat-panel",
+            "nordic": "light wood grain",
+            "classic": "warm brown wood panel",
+            "natural": "natural wood matte",
+            "industrial": "dark charcoal matte",
+            "luxury": "high-gloss pearl white",
+        }.get(style, "white flat-panel")
+
+        furniture_prompt = (
+            f"Remove ALL objects, people, clothes, tools, debris from this photo. "
+            f"Then install {layout_desc}{style_short} {category_name}. "
+            f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
+            f"{placement_note}"
+            f"PRESERVE original walls, tiles, floor, ceiling EXACTLY. Photorealistic."
+        )
+        if len(furniture_prompt) > 500:
+            furniture_prompt = furniture_prompt[:497] + "..."
+        logger.info("Furniture prompt (%d chars): %s", len(furniture_prompt), furniture_prompt[:200])
+
+        try:
+            furniture_b64 = await _call_gemini_image(
+                furniture_prompt, image_b64, extra_images=ref_images or None
+            )
+            await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
+            logger.info("Furniture generated via Gemini (single-step cleanup+install)")
+        except Exception as e:
+            logger.warning("Gemini furniture failed: %s, trying Replicate inpaint", e)
+
+        # Fallback: Cleanup → Replicate 인페인팅 (Gemini 실패 시)
+        if not furniture_b64:
+            try:
+                cleanup_prompt = (
+                    "Remove all furniture, objects, people, clothes, debris. "
+                    "Show only clean empty room with bare walls and floor. "
+                    "Keep wall color, tiles, lighting EXACTLY."
+                )
+                cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
+                mask_b64 = _create_furniture_mask(
+                    cleanup_b64, request.category, space_result
+                )
+                neg_prompt = ""
+                if wall_layout == "straight":
+                    neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled"
+                inpaint_prompt = (
+                    f"{layout_desc}{style} style {category_name}, "
+                    f"{module_desc}. {placement_note}"
+                    f"Photorealistic interior. {IMAGE_RULES}"
+                )
+                if len(inpaint_prompt) > 500:
+                    inpaint_prompt = inpaint_prompt[:497] + "..."
+                furniture_b64 = await _call_replicate_inpaint(
+                    cleanup_b64, mask_b64, inpaint_prompt, negative_prompt=neg_prompt
+                )
+                await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
+                logger.info("Furniture generated via Replicate fallback")
+            except Exception as e:
+                logger.error("Furniture generation failed (all methods): %s", e)
+
+    # 3c. Open Door (Gemini) — fallback 경로에서만 (Blender가 이미 생성한 경우 skip)
+    if furniture_b64 and not open_b64:
         try:
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
             open_prompt = (
@@ -364,9 +461,11 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                 f"Inside: {contents}. "
                 f"Do NOT change walls, tiles, floor, or perspective."
             )
-            open_b64 = await _call_gemini_image(open_prompt, furniture_b64)
+            open_b64 = await _call_gemini_image(
+                open_prompt, furniture_b64, extra_images=ref_images or None
+            )
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
-            logger.info("Open door image generated")
+            logger.info("Open door image generated via Gemini")
         except Exception as e:
             logger.error("Open door generation failed: %s", e)
 
