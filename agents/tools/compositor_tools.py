@@ -54,14 +54,14 @@ async def generate_closed_door(
     style_label = STYLE_SHORT.get(style, "white flat-panel")
 
     prompt = (
-        f"Remove all clutter, debris, tools. If construction site, finish the room: "
-        f"lay wood flooring, patch ceiling, clean walls. "
-        f"Then install {style_label} {category} cabinets. "
+        f"Install {style_label} {category} cabinets in this photo. "
+        f"PRESERVE original wall tiles, backsplash, wall color, camera angle EXACTLY. "
+        f"Only remove clutter/debris from furniture zone. "
+        f"If bare concrete floor: add wood flooring. If ceiling unfinished: patch only exposed parts. "
         f"The SECOND image shows exact 3D layout — copy module positions, "
-        f"door/drawer placement, sink bowl+faucet EXACTLY. "
-        f"Cooktop area: DRAWERS below (not doors, not empty). "
-        f"{placement_note}"
-        f"Upper cabinets flush ceiling. Continuous countertop. Photorealistic."
+        f"door/drawer placement, sink+faucet EXACTLY. "
+        f"Cooktop: DRAWERS below. {placement_note}"
+        f"Upper flush ceiling. Continuous countertop. Photorealistic."
     )
 
     if len(prompt) > 500:
