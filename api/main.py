@@ -132,28 +132,70 @@ async def debug_blender():
     except Exception as e:
         result["blender_error"] = str(e)
 
-    # Try a minimal render
+    # Try a minimal render with full stdout/stderr capture
     try:
-        from agents.blender.renderer import render_cabinet_scene
+        import json as json_mod
+        import tempfile
+        import uuid
 
-        test_layout = {
+        run_id = uuid.uuid4().hex[:8]
+        input_path = os.path.join(tempfile.gettempdir(), f"debug_input_{run_id}.json")
+        output_path = os.path.join(tempfile.gettempdir(), f"debug_output_{run_id}.png")
+
+        scene_config = {
             "modules": [
                 {"type": "cabinet", "width": 450, "is_2door": False, "position_x": 0},
             ],
             "wall_width": 450,
+            "category": "sink",
+            "style": "modern",
+            "door_state": "closed",
+            "camera_params": {},
+            "resolution": [512, 384],
+            "output_path": output_path,
         }
-        b64 = await render_cabinet_scene(
-            layout_data=test_layout,
-            camera_params={},
-            style="modern",
-            category="sink",
-            door_state="closed",
-            timeout=15,
+        with open(input_path, "w") as f:
+            json_mod.dump(scene_config, f)
+
+        script_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "agents", "blender", "scene_builder.py"
         )
-        result["render_test"] = "success"
-        result["render_size_bytes"] = len(b64) * 3 // 4  # approx decoded size
+        result["script_exists"] = os.path.exists(script_path)
+        result["script_path"] = script_path
+
+        proc = await asyncio.create_subprocess_exec(
+            "blender",
+            "--background",
+            "--factory-startup",
+            "--python",
+            script_path,
+            "--",
+            input_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+
+        result["render_rc"] = proc.returncode
+        result["render_stdout"] = stdout.decode(errors="replace")[-1000:]
+        result["render_stderr"] = stderr.decode(errors="replace")[-1000:]
+        result["output_exists"] = os.path.exists(output_path)
+
+        if os.path.exists(output_path):
+            result["render_test"] = "success"
+            result["output_size"] = os.path.getsize(output_path)
+        else:
+            result["render_test"] = "no_output"
+
+        # Cleanup
+        for p in (input_path, output_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
     except Exception as e:
-        result["render_test"] = "failed"
+        result["render_test"] = "exception"
         result["render_error"] = str(e)
 
     return result
