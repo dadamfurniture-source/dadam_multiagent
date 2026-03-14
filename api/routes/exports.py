@@ -16,7 +16,8 @@ from shared.supabase_client import get_service_client
 
 def _safe_filename(name: str) -> str:
     """파일명에 안전한 문자만 허용"""
-    return re.sub(r'[^\w\-.]', '_', name)[:100]
+    return re.sub(r"[^\w\-.]", "_", name)[:100]
+
 
 router = APIRouter(prefix="/exports", tags=["Exports (B2B)"])
 
@@ -124,22 +125,30 @@ def _build_bom(layout_json: dict) -> list[dict]:
             {"name": "Top panel (18T PB)", "size": f"{w}x{depth}mm", "qty": 1},
             {"name": "Bottom panel (18T PB)", "size": f"{w}x{depth}mm", "qty": 1},
             {"name": "Back panel (9T MDF)", "size": f"{w}x{h}mm", "qty": 1},
-            {"name": "Shelf (18T PB)", "size": f"{w-36}x{depth-20}mm", "qty": 1},
+            {"name": "Shelf (18T PB)", "size": f"{w - 36}x{depth - 20}mm", "qty": 1},
             {"name": "Door panel", "size": f"{door_w}x{door_h}mm", "qty": door_count},
             {"name": "Hinge (35mm full-overlay)", "size": "soft-close", "qty": door_count * 2},
             {"name": "Handle", "size": "128mm center", "qty": door_count},
         ]
 
         if "sink_bowl" in features:
-            parts.append({"name": "Sink cutout reinforcement", "size": f"{w-100}x{depth-100}mm", "qty": 1})
+            parts.append(
+                {
+                    "name": "Sink cutout reinforcement",
+                    "size": f"{w - 100}x{depth - 100}mm",
+                    "qty": 1,
+                }
+            )
 
-        bom_items.append({
-            "module_index": i + 1,
-            "type": mod.get("type", "base_cabinet"),
-            "width_mm": w,
-            "features": features,
-            "parts": parts,
-        })
+        bom_items.append(
+            {
+                "module_index": i + 1,
+                "type": mod.get("type", "base_cabinet"),
+                "width_mm": w,
+                "features": features,
+                "parts": parts,
+            }
+        )
 
     return bom_items
 
@@ -174,19 +183,21 @@ async def export_bom_json(
     total_edge_1mm = sum(m["width_mm"] * 2 for m in bom_items)
     total_edge_04mm = sum(m["width_mm"] * 4 for m in bom_items)
 
-    return APIResponse(data={
-        "project_id": project_id,
-        "project_name": data["project"]["name"],
-        "category": data["project"]["category"],
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "module_count": len(bom_items),
-        "total_parts": total_parts,
-        "modules": bom_items,
-        "edge_banding": {
-            "1mm_PVC_meters": round(total_edge_1mm / 1000, 1),
-            "0.4mm_PVC_meters": round(total_edge_04mm / 1000, 1),
-        },
-    })
+    return APIResponse(
+        data={
+            "project_id": project_id,
+            "project_name": data["project"]["name"],
+            "category": data["project"]["category"],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "module_count": len(bom_items),
+            "total_parts": total_parts,
+            "modules": bom_items,
+            "edge_banding": {
+                "1mm_PVC_meters": round(total_edge_1mm / 1000, 1),
+                "0.4mm_PVC_meters": round(total_edge_04mm / 1000, 1),
+            },
+        }
+    )
 
 
 # ===== BOM CSV 다운로드 =====
@@ -208,7 +219,9 @@ async def export_bom_csv(
     writer.writerow(["Module", "Type", "Width(mm)", "Part", "Size", "Qty"])
     for m in bom_items:
         for p in m["parts"]:
-            writer.writerow([m["module_index"], m["type"], m["width_mm"], p["name"], p["size"], p["qty"]])
+            writer.writerow(
+                [m["module_index"], m["type"], m["width_mm"], p["name"], p["size"], p["qty"]]
+            )
 
     csv_content = output.getvalue()
     project_name = _safe_filename(data["project"]["name"])
@@ -253,10 +266,10 @@ async def export_quote_html(
         item_rows += f"""
         <tr>
             <td>{idx}</td>
-            <td>{item.get('name', item.get('module', '-'))}</td>
-            <td style="text-align:right">{item.get('qty', 1)}</td>
-            <td style="text-align:right">{item.get('unit_price', item.get('base_price', 0)):,}</td>
-            <td style="text-align:right">{item.get('total', 0):,}</td>
+            <td>{item.get("name", item.get("module", "-"))}</td>
+            <td style="text-align:right">{item.get("qty", 1)}</td>
+            <td style="text-align:right">{item.get("unit_price", item.get("base_price", 0)):,}</td>
+            <td style="text-align:right">{item.get("total", 0):,}</td>
         </tr>"""
 
     # Pro+ BOM section
@@ -273,7 +286,7 @@ async def export_quote_html(
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>견적서 - {project.get('name', '다담 AI')}</title>
+<title>견적서 - {project.get("name", "다담 AI")}</title>
 <style>
 body {{ font-family: -apple-system, 'Malgun Gothic', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px; color: #1e293b; }}
 h1 {{ font-size: 24px; margin-bottom: 4px; }}
@@ -293,9 +306,9 @@ th {{ background: #f8fafc; text-align: left; }}
         <p style="color:#64748b">다담 AI - 주문제작 가구 시뮬레이션</p>
     </div>
     <div class="stamp">
-        <p>견적일: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}</p>
-        <p>프로젝트: {project.get('name', '-')}</p>
-        <p>카테고리: {project.get('category', '-')}</p>
+        <p>견적일: {datetime.now(timezone.utc).strftime("%Y-%m-%d")}</p>
+        <p>프로젝트: {project.get("name", "-")}</p>
+        <p>카테고리: {project.get("category", "-")}</p>
     </div>
 </div>
 
@@ -352,35 +365,43 @@ async def list_available_exports(
 
     # 견적서는 모든 플랜에서 가능
     if data["quote"]:
-        exports.append({
-            "type": "quote_html",
-            "label": "견적서 (HTML)",
-            "url": f"/api/v1/exports/{project_id}/quote.html",
-            "available": True,
-        })
+        exports.append(
+            {
+                "type": "quote_html",
+                "label": "견적서 (HTML)",
+                "url": f"/api/v1/exports/{project_id}/quote.html",
+                "available": True,
+            }
+        )
 
     # Pro+ 전용
     if data["layout"]:
-        exports.append({
-            "type": "drawing_svg",
-            "label": "상세설계 도면 (SVG)",
-            "url": f"/api/v1/exports/{project_id}/drawing.svg",
-            "available": is_pro,
-            "requires_plan": "pro",
-        })
-        exports.append({
-            "type": "bom_json",
-            "label": "자재 명세서 (JSON)",
-            "url": f"/api/v1/exports/{project_id}/bom.json",
-            "available": is_pro,
-            "requires_plan": "pro",
-        })
-        exports.append({
-            "type": "bom_csv",
-            "label": "자재 명세서 (CSV)",
-            "url": f"/api/v1/exports/{project_id}/bom.csv",
-            "available": is_pro,
-            "requires_plan": "pro",
-        })
+        exports.append(
+            {
+                "type": "drawing_svg",
+                "label": "상세설계 도면 (SVG)",
+                "url": f"/api/v1/exports/{project_id}/drawing.svg",
+                "available": is_pro,
+                "requires_plan": "pro",
+            }
+        )
+        exports.append(
+            {
+                "type": "bom_json",
+                "label": "자재 명세서 (JSON)",
+                "url": f"/api/v1/exports/{project_id}/bom.json",
+                "available": is_pro,
+                "requires_plan": "pro",
+            }
+        )
+        exports.append(
+            {
+                "type": "bom_csv",
+                "label": "자재 명세서 (CSV)",
+                "url": f"/api/v1/exports/{project_id}/bom.csv",
+                "available": is_pro,
+                "requires_plan": "pro",
+            }
+        )
 
     return APIResponse(data={"exports": exports, "plan": user.plan})

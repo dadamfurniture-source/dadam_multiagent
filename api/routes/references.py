@@ -40,19 +40,22 @@ async def upload_reference(
     path = f"{category}/{style}/{ref_id}.{ext}"
 
     client.storage.from_("references").upload(
-        path, image_content,
+        path,
+        image_content,
         {"content-type": image.content_type or "image/jpeg"},
     )
     image_url = client.storage.from_("references").get_public_url(path).rstrip("?")
 
-    client.table("style_references").insert({
-        "id": ref_id,
-        "category": category,
-        "style": style,
-        "image_url": image_url,
-        "description": description,
-        "created_by": user.id,
-    }).execute()
+    client.table("style_references").insert(
+        {
+            "id": ref_id,
+            "category": category,
+            "style": style,
+            "image_url": image_url,
+            "description": description,
+            "created_by": user.id,
+        }
+    ).execute()
 
     return APIResponse(
         message="참고 이미지가 등록되었습니다.",
@@ -93,8 +96,10 @@ async def delete_reference(
     require_admin(user)
 
     client = get_service_client()
-    client.table("style_references").update({
-        "is_active": False,
-    }).eq("id", ref_id).execute()
+    client.table("style_references").update(
+        {
+            "is_active": False,
+        }
+    ).eq("id", ref_id).execute()
 
     return APIResponse(message="참고 이미지가 삭제되었습니다.")

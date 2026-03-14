@@ -3,7 +3,7 @@
 import hashlib
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -65,9 +65,11 @@ def _authenticate_api_key(token: str) -> CurrentUser | None:
             pass
 
     if should_update:
-        client.table("api_keys").update({
-            "last_used_at": now.isoformat(),
-        }).eq("id", key_data["id"]).execute()
+        client.table("api_keys").update(
+            {
+                "last_used_at": now.isoformat(),
+            }
+        ).eq("id", key_data["id"]).execute()
 
     # 유저 프로필 조회
     profile = (

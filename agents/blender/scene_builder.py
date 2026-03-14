@@ -7,8 +7,8 @@ Reads scene config from input JSON, builds 3D cabinet scene, renders to PNG.
 """
 
 import json
-import sys
 import os
+import sys
 
 # Blender modules (available when running inside Blender)
 import bpy
@@ -21,16 +21,15 @@ project_root = os.path.dirname(os.path.dirname(script_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from agents.blender.camera import setup_camera
 from agents.blender.geometry.base_cabinet import create_base_cabinet
-from agents.blender.geometry.upper_cabinet import create_upper_cabinet
-from agents.blender.geometry.sink import create_sink_module
 from agents.blender.geometry.cooktop import create_cooktop_module, create_drawer_cabinet
 from agents.blender.geometry.countertop import create_countertop
-from agents.blender.geometry.handles import create_handle, HANDLE_STYLES
+from agents.blender.geometry.handles import HANDLE_STYLES, create_handle
+from agents.blender.geometry.sink import create_sink_module
 from agents.blender.geometry.toe_kick import create_toe_kick
+from agents.blender.geometry.upper_cabinet import create_upper_cabinet
 from agents.blender.materials import apply_style_materials
-from agents.blender.camera import setup_camera
-
 
 # Standard dimensions (mm)
 BASE_HEIGHT = 870
@@ -64,7 +63,7 @@ def build_scene(config):
     wall_width = config.get("wall_width", 3000)
     door_state = config.get("door_state", "closed")
     style = config.get("style", "modern")
-    category = config.get("category", "sink")
+    config.get("category", "sink")
 
     # Track sink position for countertop cutout
     sink_position_x = None
@@ -244,11 +243,14 @@ def _create_range_hood(width, position_x):
     hood_depth = UPPER_DEPTH
     bottom_z = WALL_HEIGHT - MOLDING - hood_height
 
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(
-        position_x + width / 2,
-        -hood_depth / 2,
-        bottom_z + hood_height / 2,
-    ))
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(
+            position_x + width / 2,
+            -hood_depth / 2,
+            bottom_z + hood_height / 2,
+        ),
+    )
     hood = bpy.context.active_object
     hood.name = f"RangeHood_{position_x}"
     hood.scale = (width / 2, hood_depth / 2, hood_height / 2)
@@ -285,7 +287,7 @@ if __name__ == "__main__":
     # Parse arguments after "--"
     argv = sys.argv
     if "--" in argv:
-        args = argv[argv.index("--") + 1:]
+        args = argv[argv.index("--") + 1 :]
     else:
         args = []
 

@@ -3,6 +3,7 @@
 import json
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
+
 from shared.supabase_client import get_service_client as _get_client
 
 
@@ -56,12 +57,7 @@ async def read_project(args: dict) -> dict:
         result["layout"] = layout.data[0] if layout.data else None
 
     if "images" in include:
-        images = (
-            client.table("generated_images")
-            .select("*")
-            .eq("project_id", project_id)
-            .execute()
-        )
+        images = client.table("generated_images").select("*").eq("project_id", project_id).execute()
         result["images"] = images.data
 
     if "quote" in include:
@@ -111,7 +107,7 @@ async def update_project(args: dict) -> dict:
     if args.get("metadata"):
         update_data["metadata"] = args["metadata"]
 
-    result = client.table("projects").update(update_data).eq("id", args["project_id"]).execute()
+    client.table("projects").update(update_data).eq("id", args["project_id"]).execute()
     return {"content": [{"type": "text", "text": f"프로젝트 상태 업데이트: {args['status']}"}]}
 
 
@@ -132,7 +128,7 @@ async def update_project(args: dict) -> dict:
 )
 async def save_quote(args: dict) -> dict:
     client = _get_client()
-    result = (
+    (
         client.table("quotes")
         .insert(
             {
@@ -145,11 +141,7 @@ async def save_quote(args: dict) -> dict:
         )
         .execute()
     )
-    return {
-        "content": [
-            {"type": "text", "text": f"견적 저장 완료: {args['total_price']:,.0f}원"}
-        ]
-    }
+    return {"content": [{"type": "text", "text": f"견적 저장 완료: {args['total_price']:,.0f}원"}]}
 
 
 @tool(
@@ -210,7 +202,7 @@ async def upload_image(args: dict) -> dict:
 )
 async def save_design(args: dict) -> dict:
     client = _get_client()
-    result = (
+    (
         client.table("detail_designs")
         .insert(
             {

@@ -20,22 +20,22 @@ def _dim_line(x1: int, y1: int, x2: int, y2: int, label: str, offset: int = 30) 
         mid_x = (x1 + x2) / 2
         return (
             f'<line x1="{x1}" y1="{ly}" x2="{x2}" y2="{ly}" stroke="#333" stroke-width="0.5"/>'
-            f'<line x1="{x1}" y1="{y1}" x2="{x1}" y2="{ly-5}" stroke="#333" stroke-width="0.3"/>'
-            f'<line x1="{x2}" y1="{y1}" x2="{x2}" y2="{ly-5}" stroke="#333" stroke-width="0.3"/>'
-            f'<polygon points="{x1},{ly} {x1+4},{ly-2} {x1+4},{ly+2}" fill="#333"/>'
-            f'<polygon points="{x2},{ly} {x2-4},{ly-2} {x2-4},{ly+2}" fill="#333"/>'
-            f'<text x="{mid_x}" y="{ly-5}" text-anchor="middle" font-size="10" fill="#333">{label}</text>'
+            f'<line x1="{x1}" y1="{y1}" x2="{x1}" y2="{ly - 5}" stroke="#333" stroke-width="0.3"/>'
+            f'<line x1="{x2}" y1="{y1}" x2="{x2}" y2="{ly - 5}" stroke="#333" stroke-width="0.3"/>'
+            f'<polygon points="{x1},{ly} {x1 + 4},{ly - 2} {x1 + 4},{ly + 2}" fill="#333"/>'
+            f'<polygon points="{x2},{ly} {x2 - 4},{ly - 2} {x2 - 4},{ly + 2}" fill="#333"/>'
+            f'<text x="{mid_x}" y="{ly - 5}" text-anchor="middle" font-size="10" fill="#333">{label}</text>'
         )
     else:
         lx = x1 + offset
         mid_y = (y1 + y2) / 2
         return (
             f'<line x1="{lx}" y1="{y1}" x2="{lx}" y2="{y2}" stroke="#333" stroke-width="0.5"/>'
-            f'<line x1="{x1}" y1="{y1}" x2="{lx+5}" y2="{y1}" stroke="#333" stroke-width="0.3"/>'
-            f'<line x1="{x1}" y1="{y2}" x2="{lx+5}" y2="{y2}" stroke="#333" stroke-width="0.3"/>'
-            f'<polygon points="{lx},{y1} {lx-2},{y1+4} {lx+2},{y1+4}" fill="#333"/>'
-            f'<polygon points="{lx},{y2} {lx-2},{y2-4} {lx+2},{y2-4}" fill="#333"/>'
-            f'<text x="{lx+8}" y="{mid_y}" font-size="10" fill="#333" dominant-baseline="middle">{label}</text>'
+            f'<line x1="{x1}" y1="{y1}" x2="{lx + 5}" y2="{y1}" stroke="#333" stroke-width="0.3"/>'
+            f'<line x1="{x1}" y1="{y2}" x2="{lx + 5}" y2="{y2}" stroke="#333" stroke-width="0.3"/>'
+            f'<polygon points="{lx},{y1} {lx - 2},{y1 + 4} {lx + 2},{y1 + 4}" fill="#333"/>'
+            f'<polygon points="{lx},{y2} {lx - 2},{y2 - 4} {lx + 2},{y2 - 4}" fill="#333"/>'
+            f'<text x="{lx + 8}" y="{mid_y}" font-size="10" fill="#333" dominant-baseline="middle">{label}</text>'
         )
 
 
@@ -48,8 +48,8 @@ def _generate_front_elevation(layout: dict) -> str:
     lower_h = specs.get("lower_height_mm", 870)
     upper_h = specs.get("upper_height_mm", 720)
     toe_kick = specs.get("toe_kick_mm", 150)
-    molding = specs.get("molding_mm", 60)
-    depth = specs.get("depth_mm", 580)
+    specs.get("molding_mm", 60)
+    specs.get("depth_mm", 580)
     total_w = layout.get("total_width_mm", 2400)
     total_h = layout.get("total_height_mm", 2400)
 
@@ -61,8 +61,8 @@ def _generate_front_elevation(layout: dict) -> str:
 
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_w} {svg_h}" width="{svg_w}" height="{svg_h}">',
-        '<style>text { font-family: monospace; }</style>',
-        f'<text x="{svg_w//2}" y="20" text-anchor="middle" font-size="14" font-weight="bold">FRONT ELEVATION</text>',
+        "<style>text { font-family: monospace; }</style>",
+        f'<text x="{svg_w // 2}" y="20" text-anchor="middle" font-size="14" font-weight="bold">FRONT ELEVATION</text>',
     ]
 
     # Coordinate helpers (origin = top-left of wall)
@@ -81,7 +81,7 @@ def _generate_front_elevation(layout: dict) -> str:
 
         # Module body
         parts.append(
-            f'<rect x="{wx(x)}" y="{wy(lower_top)}" width="{int(w*scale)}" height="{int(lower_h*scale)}" '
+            f'<rect x="{wx(x)}" y="{wy(lower_top)}" width="{int(w * scale)}" height="{int(lower_h * scale)}" '
             f'fill="none" stroke="#000" stroke-width="1"/>'
         )
 
@@ -130,7 +130,7 @@ def _generate_front_elevation(layout: dict) -> str:
         features = mod.get("features", [])
 
         parts.append(
-            f'<rect x="{wx(x)}" y="{wy(upper_top_y)}" width="{int(w*scale)}" height="{int(upper_h*scale)}" '
+            f'<rect x="{wx(x)}" y="{wy(upper_top_y)}" width="{int(w * scale)}" height="{int(upper_h * scale)}" '
             f'fill="none" stroke="#000" stroke-width="1"/>'
         )
 
@@ -144,7 +144,9 @@ def _generate_front_elevation(layout: dict) -> str:
     # Overall dimension
     parts.append(_dim_line(wx(0), wy(0) - 10, wx(total_w), wy(0) - 10, f"{total_w}", 20))
     # Height dimension (right side)
-    parts.append(_dim_line(wx(total_w) + 10, wy(0), wx(total_w) + 10, wy(total_h), f"{total_h}", 20))
+    parts.append(
+        _dim_line(wx(total_w) + 10, wy(0), wx(total_w) + 10, wy(total_h), f"{total_h}", 20)
+    )
 
     # Countertop line
     parts.append(
@@ -188,17 +190,21 @@ async def generate_svg(args: dict) -> dict:
         svg = _generate_front_elevation(layout)  # fallback for now
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "drawing_type": drawing_type,
-                "svg": svg,
-                "dimensions": {
-                    "total_width_mm": layout.get("total_width_mm"),
-                    "total_height_mm": layout.get("total_height_mm"),
-                },
-            }),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "drawing_type": drawing_type,
+                        "svg": svg,
+                        "dimensions": {
+                            "total_width_mm": layout.get("total_width_mm"),
+                            "total_height_mm": layout.get("total_height_mm"),
+                        },
+                    }
+                ),
+            }
+        ]
     }
 
 
@@ -238,7 +244,7 @@ async def generate_bom_drawing(args: dict) -> dict:
                 {"name": "Top panel (18T PB)", "size": f"{w}x{depth}mm", "qty": 1},
                 {"name": "Bottom panel (18T PB)", "size": f"{w}x{depth}mm", "qty": 1},
                 {"name": "Back panel (9T MDF)", "size": f"{w}x{h}mm", "qty": 1},
-                {"name": "Shelf (18T PB)", "size": f"{w-36}x{depth-20}mm", "qty": 1},
+                {"name": "Shelf (18T PB)", "size": f"{w - 36}x{depth - 20}mm", "qty": 1},
             ],
         }
 
@@ -246,24 +252,36 @@ async def generate_bom_drawing(args: dict) -> dict:
         door_count = mod.get("door_count", 1)
         door_h = h - specs.get("toe_kick_mm", 150)
         door_w = w // door_count
-        module_bom["parts"].extend([
-            {"name": "Door panel", "size": f"{door_w}x{door_h}mm", "qty": door_count},
-            {"name": "Hinge (35mm full-overlay)", "size": "soft-close", "qty": door_count * 2},
-            {"name": "Handle", "size": "128mm center", "qty": door_count},
-        ])
+        module_bom["parts"].extend(
+            [
+                {"name": "Door panel", "size": f"{door_w}x{door_h}mm", "qty": door_count},
+                {"name": "Hinge (35mm full-overlay)", "size": "soft-close", "qty": door_count * 2},
+                {"name": "Handle", "size": "128mm center", "qty": door_count},
+            ]
+        )
 
         # Special features
         if "sink_bowl" in features:
             module_bom["parts"].append(
-                {"name": "Sink cutout reinforcement", "size": f"{w-100}x{depth-100}mm", "qty": 1}
+                {
+                    "name": "Sink cutout reinforcement",
+                    "size": f"{w - 100}x{depth - 100}mm",
+                    "qty": 1,
+                }
             )
         if "drawer_3" in features:
-            module_bom["parts"] = [p for p in module_bom["parts"] if "Door" not in p["name"] and "Hinge" not in p["name"]]
-            module_bom["parts"].extend([
-                {"name": "Drawer box", "size": f"{w-40}x{depth-40}x150mm", "qty": 3},
-                {"name": "Drawer slide (soft-close)", "size": f"{depth-40}mm", "qty": 6},
-                {"name": "Drawer front panel", "size": f"{w}x{(door_h)//3}mm", "qty": 3},
-            ])
+            module_bom["parts"] = [
+                p
+                for p in module_bom["parts"]
+                if "Door" not in p["name"] and "Hinge" not in p["name"]
+            ]
+            module_bom["parts"].extend(
+                [
+                    {"name": "Drawer box", "size": f"{w - 40}x{depth - 40}x150mm", "qty": 3},
+                    {"name": "Drawer slide (soft-close)", "size": f"{depth - 40}mm", "qty": 6},
+                    {"name": "Drawer front panel", "size": f"{w}x{(door_h) // 3}mm", "qty": 3},
+                ]
+            )
 
         bom_items.append(module_bom)
 
@@ -276,17 +294,22 @@ async def generate_bom_drawing(args: dict) -> dict:
         total_edge_04mm += w * 4  # internal edges
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "bom": bom_items,
-                "edge_banding": {
-                    "1mm_PVC_meters": round(total_edge_1mm / 1000, 1),
-                    "0.4mm_PVC_meters": round(total_edge_04mm / 1000, 1),
-                },
-                "module_count": len(bom_items),
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "bom": bom_items,
+                        "edge_banding": {
+                            "1mm_PVC_meters": round(total_edge_1mm / 1000, 1),
+                            "0.4mm_PVC_meters": round(total_edge_04mm / 1000, 1),
+                        },
+                        "module_count": len(bom_items),
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 

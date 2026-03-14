@@ -83,9 +83,11 @@ async def embed_completed_projects():
         )
         embedding = await _get_embedding(text)
         if embedding:
-            client.table("case_embeddings").update({
-                "embedding": embedding,
-            }).eq("id", case["id"]).execute()
+            client.table("case_embeddings").update(
+                {
+                    "embedding": embedding,
+                }
+            ).eq("id", case["id"]).execute()
             processed += 1
 
     logger.info(f"Embedded {processed}/{len(cases.data)} cases")
@@ -109,6 +111,7 @@ async def calibrate_prices():
         return {"calibrated": 0, "reason": "insufficient_data"}
 
     from collections import defaultdict
+
     by_category = defaultdict(list)
     for row in accuracy_data.data:
         by_category[row["category"]].append(row["error_rate_pct"])
@@ -146,27 +149,33 @@ async def calibrate_prices():
             old_history.append(history_entry)
             # Keep last 24 entries
             old_history = old_history[-24:]
-            client.table("price_calibrations").update({
-                "correction_factor": correction,
-                "sample_count": len(errors),
-                "avg_error_rate": round(avg_error, 4),
-                "std_error_rate": round(std_error, 4),
-                "last_calibrated_at": datetime.now(timezone.utc).isoformat(),
-                "calibration_history": old_history,
-            }).eq("id", existing.data[0]["id"]).execute()
+            client.table("price_calibrations").update(
+                {
+                    "correction_factor": correction,
+                    "sample_count": len(errors),
+                    "avg_error_rate": round(avg_error, 4),
+                    "std_error_rate": round(std_error, 4),
+                    "last_calibrated_at": datetime.now(timezone.utc).isoformat(),
+                    "calibration_history": old_history,
+                }
+            ).eq("id", existing.data[0]["id"]).execute()
         else:
-            client.table("price_calibrations").insert({
-                "category": cat,
-                "region": "default",
-                "correction_factor": correction,
-                "sample_count": len(errors),
-                "avg_error_rate": round(avg_error, 4),
-                "std_error_rate": round(std_error, 4),
-                "calibration_history": [history_entry],
-            }).execute()
+            client.table("price_calibrations").insert(
+                {
+                    "category": cat,
+                    "region": "default",
+                    "correction_factor": correction,
+                    "sample_count": len(errors),
+                    "avg_error_rate": round(avg_error, 4),
+                    "std_error_rate": round(std_error, 4),
+                    "calibration_history": [history_entry],
+                }
+            ).execute()
 
         calibrated += 1
-        logger.info(f"  {cat}: correction={correction}, avg_error={avg_error:.2f}%, samples={len(errors)}")
+        logger.info(
+            f"  {cat}: correction={correction}, avg_error={avg_error:.2f}%, samples={len(errors)}"
+        )
 
     logger.info(f"Calibrated {calibrated} categories")
     return {"calibrated": calibrated}
@@ -213,21 +222,23 @@ async def analyze_as_patterns():
 
         confidence = min(0.9, pattern["occurrence_count"] / 10)
 
-        client.table("learned_constraints").insert({
-            "category": pattern["category"],
-            "rule_text": rule_text,
-            "rule_json": {
-                "as_type": pattern["as_type"],
-                "count": pattern["occurrence_count"],
-                "auto_generated": True,
-            },
-            "severity": "warning" if pattern["occurrence_count"] < 5 else "error",
-            "source_type": "as_pattern",
-            "source_tickets": pattern["ticket_ids"][:10],
-            "source_count": pattern["occurrence_count"],
-            "confidence": confidence,
-            "status": "proposed",
-        }).execute()
+        client.table("learned_constraints").insert(
+            {
+                "category": pattern["category"],
+                "rule_text": rule_text,
+                "rule_json": {
+                    "as_type": pattern["as_type"],
+                    "count": pattern["occurrence_count"],
+                    "auto_generated": True,
+                },
+                "severity": "warning" if pattern["occurrence_count"] < 5 else "error",
+                "source_type": "as_pattern",
+                "source_tickets": pattern["ticket_ids"][:10],
+                "source_count": pattern["occurrence_count"],
+                "confidence": confidence,
+                "status": "proposed",
+            }
+        ).execute()
 
         proposed += 1
         logger.info(f"  Proposed: {rule_text[:60]}... (confidence={confidence:.2f})")
@@ -289,34 +300,42 @@ async def check_lora_trigger():
         image_ids = [img["id"] for img in images.data]
 
         # 상태 일괄 업데이트
-        client.table("training_queue").update({
-            "status": "training",
-        }).in_("id", image_ids).execute()
+        client.table("training_queue").update(
+            {
+                "status": "training",
+            }
+        ).in_("id", image_ids).execute()
 
         # 새 모델 버전 레코드
         lora_key = LORA_MODELS.get(category, category)
         trigger_word = f"DADAM_{lora_key.upper()}"
 
-        model_record = client.table("lora_model_versions").insert({
-            "category": category,
-            "version": next_version,
-            "replicate_model_id": f"dadamfurniture-source/{lora_key}:v{next_version}",
-            "trigger_word": trigger_word,
-            "training_images_count": len(image_urls),
-            "is_active": False,
-            "notes": f"Auto-triggered: {count} images pending",
-        }).execute()
+        client.table("lora_model_versions").insert(
+            {
+                "category": category,
+                "version": next_version,
+                "replicate_model_id": f"dadamfurniture-source/{lora_key}:v{next_version}",
+                "trigger_word": trigger_word,
+                "training_images_count": len(image_urls),
+                "is_active": False,
+                "notes": f"Auto-triggered: {count} images pending",
+            }
+        ).execute()
 
         # TODO: Replicate API 호출로 실제 학습 시작
         # training = replicate.trainings.create(...)
 
-        triggered.append({
-            "category": category,
-            "version": next_version,
-            "images": len(image_urls),
-            "trigger_word": trigger_word,
-        })
-        logger.info(f"  Triggered LoRA training: {category} v{next_version} ({len(image_urls)} images)")
+        triggered.append(
+            {
+                "category": category,
+                "version": next_version,
+                "images": len(image_urls),
+                "trigger_word": trigger_word,
+            }
+        )
+        logger.info(
+            f"  Triggered LoRA training: {category} v{next_version} ({len(image_urls)} images)"
+        )
 
     logger.info(f"Triggered {len(triggered)} LoRA trainings")
     return {"triggered": triggered}
@@ -355,7 +374,9 @@ async def cleanup_old_training():
         rejected_ids = [r["id"] for r in rejected.data]
         client.table("training_queue").delete().in_("id", rejected_ids).execute()
 
-    logger.info(f"Cleanup: {rejected.count or 0} rejected deleted, {trained.count or 0} old trained records")
+    logger.info(
+        f"Cleanup: {rejected.count or 0} rejected deleted, {trained.count or 0} old trained records"
+    )
     return {"deleted_rejected": rejected.count or 0, "old_trained": trained.count or 0}
 
 
@@ -421,7 +442,9 @@ async def auto_register_completed_cases():
             if isinstance(analysis_json, str):
                 analysis_json = json.loads(analysis_json)
             dims = analysis_json.get("dimensions", {})
-            space_summary = f"{dims.get('width', '?')}mm x {dims.get('depth', '?')}mm {project['category']}"
+            space_summary = (
+                f"{dims.get('width', '?')}mm x {dims.get('depth', '?')}mm {project['category']}"
+            )
 
         layout_summary = ""
         if layout_json:
@@ -429,20 +452,21 @@ async def auto_register_completed_cases():
                 layout_json = json.loads(layout_json)
             modules = layout_json.get("modules", [])
             layout_summary = ", ".join(
-                f"{m.get('width_mm', '?')}mm {m.get('type', 'module')}"
-                for m in modules[:5]
+                f"{m.get('width_mm', '?')}mm {m.get('type', 'module')}" for m in modules[:5]
             )
 
-        client.table("case_embeddings").insert({
-            "project_id": project["id"],
-            "category": project["category"],
-            "style": project.get("style"),
-            "space_summary": space_summary,
-            "layout_summary": layout_summary,
-            "is_installed": False,
-            "space_analysis_json": analysis_json,
-            "layout_json": layout_json,
-        }).execute()
+        client.table("case_embeddings").insert(
+            {
+                "project_id": project["id"],
+                "category": project["category"],
+                "style": project.get("style"),
+                "space_summary": space_summary,
+                "layout_summary": layout_summary,
+                "is_installed": False,
+                "space_analysis_json": analysis_json,
+                "layout_json": layout_json,
+            }
+        ).execute()
         registered += 1
 
     logger.info(f"Registered {registered} new cases")
@@ -460,7 +484,7 @@ TASKS = {
     "cleanup": cleanup_old_training,
     "register_cases": auto_register_completed_cases,
     "all_hourly": None,  # special: runs hourly tasks
-    "all_daily": None,   # special: runs daily tasks
+    "all_daily": None,  # special: runs daily tasks
 }
 
 
@@ -482,7 +506,7 @@ async def run_daily():
 
 async def main():
     if len(sys.argv) < 2:
-        print(f"Usage: python -m workers.feedback_cron <task>")
+        print("Usage: python -m workers.feedback_cron <task>")
         print(f"Tasks: {', '.join(TASKS.keys())}")
         sys.exit(1)
 

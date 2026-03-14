@@ -48,11 +48,14 @@ def create_countertop(
         cutout_depth = depth * 0.5
         cutout_center_x = sink_position_x + sink_width / 2
 
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(
-            cutout_center_x,
-            center_y,
-            top_z,
-        ))
+        bpy.ops.mesh.primitive_cube_add(
+            size=1,
+            location=(
+                cutout_center_x,
+                center_y,
+                top_z,
+            ),
+        )
         cutout = bpy.context.active_object
         cutout.name = "SinkCutout"
         cutout.scale = (cutout_width / 2, cutout_depth / 2, thickness)

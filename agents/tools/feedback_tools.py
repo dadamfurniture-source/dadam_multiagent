@@ -6,6 +6,7 @@ from datetime import datetime
 
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
+
 from shared.supabase_client import get_service_client as _get_client
 
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -70,14 +71,19 @@ async def search_similar_cases(args: dict) -> dict:
             .execute()
         )
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "method": "text_fallback",
-                    "cases": results.data,
-                    "note": f"벡터 검색 불가 ({e}), 카테고리+평점 기반 결과"
-                }, ensure_ascii=False),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "method": "text_fallback",
+                            "cases": results.data,
+                            "note": f"벡터 검색 불가 ({e}), 카테고리+평점 기반 결과",
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ]
         }
 
     # Supabase RPC로 벡터 유사도 검색
@@ -92,14 +98,19 @@ async def search_similar_cases(args: dict) -> dict:
     ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "method": "vector_search",
-                "cases_found": len(results.data),
-                "cases": results.data,
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "method": "vector_search",
+                        "cases_found": len(results.data),
+                        "cases": results.data,
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 
@@ -152,13 +163,15 @@ async def save_case_embedding(args: dict) -> dict:
     if embedding:
         record["embedding"] = embedding
 
-    result = client.table("case_embeddings").insert(record).execute()
+    client.table("case_embeddings").insert(record).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"사례 저장 완료 (임베딩: {'있음' if embedding else '없음'})",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"사례 저장 완료 (임베딩: {'있음' if embedding else '없음'})",
+            }
+        ]
     }
 
 
@@ -172,7 +185,10 @@ async def save_case_embedding(args: dict) -> dict:
         "type": "object",
         "properties": {
             "category": {"type": "string"},
-            "module_type": {"type": "string", "description": "세부 모듈 유형 (없으면 카테고리 전체)"},
+            "module_type": {
+                "type": "string",
+                "description": "세부 모듈 유형 (없으면 카테고리 전체)",
+            },
             "region": {"type": "string", "description": "지역 (기본: default)"},
         },
         "required": ["category"],
@@ -195,28 +211,38 @@ async def get_price_calibration(args: dict) -> dict:
 
     if not result.data:
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "correction_factor": 1.0,
-                    "sample_count": 0,
-                    "note": "보정 데이터 없음. 기본 견적 사용.",
-                }, ensure_ascii=False),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "correction_factor": 1.0,
+                            "sample_count": 0,
+                            "note": "보정 데이터 없음. 기본 견적 사용.",
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ]
         }
 
     cal = result.data[0]
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "correction_factor": cal["correction_factor"],
-                "sample_count": cal["sample_count"],
-                "avg_error_rate": cal["avg_error_rate"],
-                "last_calibrated": cal["last_calibrated_at"],
-                "note": f"보정 계수 {cal['correction_factor']}x 적용 (샘플 {cal['sample_count']}건 기반)",
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "correction_factor": cal["correction_factor"],
+                        "sample_count": cal["sample_count"],
+                        "avg_error_rate": cal["avg_error_rate"],
+                        "last_calibrated": cal["last_calibrated_at"],
+                        "note": f"보정 계수 {cal['correction_factor']}x 적용 (샘플 {cal['sample_count']}건 기반)",
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 
@@ -244,14 +270,17 @@ async def recalibrate_prices(args: dict) -> dict:
 
     if not accuracy_data.data or len(accuracy_data.data) < 10:
         return {
-            "content": [{
-                "type": "text",
-                "text": f"보정 불가: 데이터 {len(accuracy_data.data or [])}건 (최소 10건 필요)",
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"보정 불가: 데이터 {len(accuracy_data.data or [])}건 (최소 10건 필요)",
+                }
+            ]
         }
 
     # 카테고리별 보정 계수 계산
     from collections import defaultdict
+
     by_category = defaultdict(list)
     for row in accuracy_data.data:
         by_category[row["category"]].append(row["error_rate_pct"])
@@ -283,40 +312,51 @@ async def recalibrate_prices(args: dict) -> dict:
         if existing.data:
             old_history = existing.data[0].get("calibration_history") or []
             old_history.append(history_entry)
-            client.table("price_calibrations").update({
-                "correction_factor": correction,
-                "sample_count": len(errors),
-                "avg_error_rate": round(avg_error, 4),
-                "std_error_rate": round(std_error, 4),
-                "last_calibrated_at": datetime.utcnow().isoformat(),
-                "calibration_history": old_history,
-            }).eq("id", existing.data[0]["id"]).execute()
+            client.table("price_calibrations").update(
+                {
+                    "correction_factor": correction,
+                    "sample_count": len(errors),
+                    "avg_error_rate": round(avg_error, 4),
+                    "std_error_rate": round(std_error, 4),
+                    "last_calibrated_at": datetime.utcnow().isoformat(),
+                    "calibration_history": old_history,
+                }
+            ).eq("id", existing.data[0]["id"]).execute()
         else:
-            client.table("price_calibrations").insert({
-                "category": cat,
-                "region": "default",
-                "correction_factor": correction,
-                "sample_count": len(errors),
-                "avg_error_rate": round(avg_error, 4),
-                "std_error_rate": round(std_error, 4),
-                "calibration_history": [history_entry],
-            }).execute()
+            client.table("price_calibrations").insert(
+                {
+                    "category": cat,
+                    "region": "default",
+                    "correction_factor": correction,
+                    "sample_count": len(errors),
+                    "avg_error_rate": round(avg_error, 4),
+                    "std_error_rate": round(std_error, 4),
+                    "calibration_history": [history_entry],
+                }
+            ).execute()
 
-        results.append({
-            "category": cat,
-            "correction_factor": correction,
-            "avg_error_pct": round(avg_error, 2),
-            "sample_count": len(errors),
-        })
+        results.append(
+            {
+                "category": cat,
+                "correction_factor": correction,
+                "avg_error_pct": round(avg_error, 2),
+                "sample_count": len(errors),
+            }
+        )
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "calibrated_categories": len(results),
-                "results": results,
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "calibrated_categories": len(results),
+                        "results": results,
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 
@@ -348,13 +388,18 @@ async def get_active_constraints(args: dict) -> dict:
     )
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "constraints_count": len(result.data),
-                "constraints": result.data,
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "constraints_count": len(result.data),
+                        "constraints": result.data,
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 
@@ -383,10 +428,12 @@ async def analyze_as_patterns(args: dict) -> dict:
 
     if not patterns.data:
         return {
-            "content": [{
-                "type": "text",
-                "text": "반복 패턴이 감지되지 않았습니다.",
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": "반복 패턴이 감지되지 않았습니다.",
+                }
+            ]
         }
 
     # 기존 제약조건과 중복 확인
@@ -396,30 +443,37 @@ async def analyze_as_patterns(args: dict) -> dict:
         .in_("status", ["proposed", "approved", "applied"])
         .execute()
     )
-    existing_texts = {c["rule_text"] for c in existing.data}
+    {c["rule_text"] for c in existing.data}
 
     new_patterns = []
     for pattern in patterns.data:
         if pattern["occurrence_count"] >= args.get("min_occurrences", 3):
-            new_patterns.append({
-                "as_type": pattern["as_type"],
-                "category": pattern["category"],
-                "count": pattern["occurrence_count"],
-                "ticket_ids": pattern["ticket_ids"],
-                "descriptions": pattern["descriptions"][:3],  # 상위 3개 설명
-            })
+            new_patterns.append(
+                {
+                    "as_type": pattern["as_type"],
+                    "category": pattern["category"],
+                    "count": pattern["occurrence_count"],
+                    "ticket_ids": pattern["ticket_ids"],
+                    "descriptions": pattern["descriptions"][:3],  # 상위 3개 설명
+                }
+            )
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "patterns_found": len(new_patterns),
-                "patterns": new_patterns,
-                "existing_constraints": len(existing.data),
-                "instruction": "각 패턴에 대해 구체적인 제약조건 rule_text를 생성하고 "
-                               "propose_constraint 도구로 등록하세요.",
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "patterns_found": len(new_patterns),
+                        "patterns": new_patterns,
+                        "existing_constraints": len(existing.data),
+                        "instruction": "각 패턴에 대해 구체적인 제약조건 rule_text를 생성하고 "
+                        "propose_constraint 도구로 등록하세요.",
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 
@@ -453,24 +507,28 @@ async def analyze_as_patterns(args: dict) -> dict:
 async def propose_constraint(args: dict) -> dict:
     client = _get_client()
 
-    result = client.table("learned_constraints").insert({
-        "category": args["category"],
-        "rule_text": args["rule_text"],
-        "rule_json": args.get("rule_json"),
-        "severity": args.get("severity", "warning"),
-        "source_type": args["source_type"],
-        "source_tickets": args.get("source_tickets", []),
-        "source_count": len(args.get("source_tickets", [])),
-        "confidence": args.get("confidence", 0.5),
-        "status": "proposed",
-    }).execute()
+    client.table("learned_constraints").insert(
+        {
+            "category": args["category"],
+            "rule_text": args["rule_text"],
+            "rule_json": args.get("rule_json"),
+            "severity": args.get("severity", "warning"),
+            "source_type": args["source_type"],
+            "source_tickets": args.get("source_tickets", []),
+            "source_count": len(args.get("source_tickets", [])),
+            "confidence": args.get("confidence", 0.5),
+            "status": "proposed",
+        }
+    ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"제약조건 제안됨: [{args.get('severity', 'warning')}] {args['rule_text']} "
-                    f"(신뢰도: {args.get('confidence', 0.5)}, 근거: {len(args.get('source_tickets', []))}건)",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"제약조건 제안됨: [{args.get('severity', 'warning')}] {args['rule_text']} "
+                f"(신뢰도: {args.get('confidence', 0.5)}, 근거: {len(args.get('source_tickets', []))}건)",
+            }
+        ]
     }
 
 
@@ -500,16 +558,18 @@ async def propose_constraint(args: dict) -> dict:
 async def queue_training_image(args: dict) -> dict:
     client = _get_client()
 
-    result = client.table("training_queue").insert({
-        "image_url": args["image_url"],
-        "category": args["category"],
-        "style": args.get("style"),
-        "quality_grade": args.get("quality_grade", "normal"),
-        "source": args["source"],
-        "project_id": args.get("project_id"),
-        "customer_rating": args.get("customer_rating"),
-        "status": "pending",
-    }).execute()
+    client.table("training_queue").insert(
+        {
+            "image_url": args["image_url"],
+            "category": args["category"],
+            "style": args.get("style"),
+            "quality_grade": args.get("quality_grade", "normal"),
+            "source": args["source"],
+            "project_id": args.get("project_id"),
+            "customer_rating": args.get("customer_rating"),
+            "status": "pending",
+        }
+    ).execute()
 
     # 해당 카테고리 대기열 현황 확인
     pending = (
@@ -526,11 +586,13 @@ async def queue_training_image(args: dict) -> dict:
         trigger_msg = f" ⚠️ {count}장 누적 — 재학습 트리거 조건 충족!"
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"학습 대기열 등록: {args['category']} ({args.get('quality_grade', 'normal')})"
-                    f" / 현재 대기: {count}장{trigger_msg}",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"학습 대기열 등록: {args['category']} ({args.get('quality_grade', 'normal')})"
+                f" / 현재 대기: {count}장{trigger_msg}",
+            }
+        ]
     }
 
 
@@ -559,25 +621,34 @@ async def get_active_lora_model(args: dict) -> dict:
 
     if not result.data:
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({"model": None, "note": "활성 모델 없음"}, ensure_ascii=False),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {"model": None, "note": "활성 모델 없음"}, ensure_ascii=False
+                    ),
+                }
+            ]
         }
 
     model = result.data
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "model_id": model["replicate_model_id"],
-                "trigger_word": model["trigger_word"],
-                "version": model["version"],
-                "training_images": model["training_images_count"],
-                "avg_rating": model.get("avg_customer_rating"),
-                "activated_at": model.get("activated_at"),
-            }, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "model_id": model["replicate_model_id"],
+                        "trigger_word": model["trigger_word"],
+                        "version": model["version"],
+                        "training_images": model["training_images_count"],
+                        "avg_rating": model.get("avg_customer_rating"),
+                        "activated_at": model.get("activated_at"),
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+        ]
     }
 
 
@@ -615,26 +686,30 @@ async def get_active_lora_model(args: dict) -> dict:
 async def save_customer_feedback(args: dict) -> dict:
     client = _get_client()
 
-    result = client.table("customer_feedback").insert({
-        "project_id": args.get("project_id"),
-        "order_id": args.get("order_id"),
-        "user_id": args["user_id"],
-        "overall_rating": args["overall_rating"],
-        "design_rating": args.get("design_rating"),
-        "image_rating": args.get("image_rating"),
-        "quote_rating": args.get("quote_rating"),
-        "install_rating": args.get("install_rating"),
-        "selected_style": args.get("selected_style"),
-        "comment": args.get("comment"),
-        "installation_photos": args.get("installation_photos", []),
-        "feedback_type": args["feedback_type"],
-    }).execute()
+    client.table("customer_feedback").insert(
+        {
+            "project_id": args.get("project_id"),
+            "order_id": args.get("order_id"),
+            "user_id": args["user_id"],
+            "overall_rating": args["overall_rating"],
+            "design_rating": args.get("design_rating"),
+            "image_rating": args.get("image_rating"),
+            "quote_rating": args.get("quote_rating"),
+            "install_rating": args.get("install_rating"),
+            "selected_style": args.get("selected_style"),
+            "comment": args.get("comment"),
+            "installation_photos": args.get("installation_photos", []),
+            "feedback_type": args["feedback_type"],
+        }
+    ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"피드백 저장: 만족도 {args['overall_rating']}/5 ({args['feedback_type']})",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"피드백 저장: 만족도 {args['overall_rating']}/5 ({args['feedback_type']})",
+            }
+        ]
     }
 
 
@@ -644,13 +719,18 @@ feedback_server = create_sdk_mcp_server(
     version="1.0.0",
     tools=[
         # RAG
-        search_similar_cases, save_case_embedding,
+        search_similar_cases,
+        save_case_embedding,
         # 가격 보정
-        get_price_calibration, recalibrate_prices,
+        get_price_calibration,
+        recalibrate_prices,
         # 제약조건
-        get_active_constraints, analyze_as_patterns, propose_constraint,
+        get_active_constraints,
+        analyze_as_patterns,
+        propose_constraint,
         # LoRA
-        queue_training_image, get_active_lora_model,
+        queue_training_image,
+        get_active_lora_model,
         # 피드백
         save_customer_feedback,
     ],

@@ -6,15 +6,14 @@ Handles are attached to door/drawer fronts.
 
 import bpy
 
-
 # Handle style definitions: (length_mm, style_type, color_rgb)
 HANDLE_STYLES = {
-    "modern": {"length": 128, "type": "bar", "color": (0.15, 0.15, 0.15)},       # dark nickel
-    "nordic": {"length": 128, "type": "bar", "color": (0.7, 0.7, 0.72)},         # brushed silver
-    "classic": {"length": 96, "type": "arch", "color": (0.72, 0.53, 0.04)},      # brass
-    "natural": {"length": 96, "type": "bar", "color": (0.4, 0.35, 0.3)},         # dark bronze
-    "industrial": {"length": 160, "type": "bar", "color": (0.1, 0.1, 0.1)},      # matte black
-    "luxury": {"length": 128, "type": "arch", "color": (0.83, 0.69, 0.22)},      # gold
+    "modern": {"length": 128, "type": "bar", "color": (0.15, 0.15, 0.15)},  # dark nickel
+    "nordic": {"length": 128, "type": "bar", "color": (0.7, 0.7, 0.72)},  # brushed silver
+    "classic": {"length": 96, "type": "arch", "color": (0.72, 0.53, 0.04)},  # brass
+    "natural": {"length": 96, "type": "bar", "color": (0.4, 0.35, 0.3)},  # dark bronze
+    "industrial": {"length": 160, "type": "bar", "color": (0.1, 0.1, 0.1)},  # matte black
+    "luxury": {"length": 128, "type": "arch", "color": (0.83, 0.69, 0.22)},  # gold
 }
 
 
@@ -59,6 +58,7 @@ def create_handle(
             pass
         else:
             import math
+
             bar.rotation_euler.y = math.radians(90)
 
         # Mounting posts
@@ -74,6 +74,7 @@ def create_handle(
             post = bpy.context.active_object
             post.name = f"Handle_post_{post_x:.0f}"
             import math
+
             post.rotation_euler.x = math.radians(90)
             post.parent = bar
 
@@ -82,6 +83,7 @@ def create_handle(
     elif handle_type == "arch":
         # Arch handle: curved bar
         import math
+
         bpy.ops.mesh.primitive_torus_add(
             major_radius=length / 2,
             minor_radius=4,

@@ -7,8 +7,9 @@ Standard Korean kitchen base cabinet:
 - Toe kick setback: 50mm
 """
 
-import bpy
 import math
+
+import bpy
 
 
 def _add_box(name, width, height, depth, location=(0, 0, 0)):
@@ -53,7 +54,9 @@ def create_base_cabinet(
     panel_thickness = 18
 
     # Parent empty
-    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(position_x + width / 2, -position_y - depth / 2, height / 2))
+    bpy.ops.object.empty_add(
+        type="PLAIN_AXES", location=(position_x + width / 2, -position_y - depth / 2, height / 2)
+    )
     parent = bpy.context.active_object
     parent.name = f"BaseCabinet_{position_x}"
 
@@ -72,8 +75,10 @@ def create_base_cabinet(
     body.parent = parent
 
     # Side panels
-    for side, sx in [("L", position_x + panel_thickness / 2),
-                     ("R", position_x + width - panel_thickness / 2)]:
+    for side, sx in [
+        ("L", position_x + panel_thickness / 2),
+        ("R", position_x + width - panel_thickness / 2),
+    ]:
         panel = _add_box(
             f"SidePanel_{side}_{position_x}",
             panel_thickness,
@@ -128,9 +133,7 @@ def create_base_cabinet(
             offset_x = pivot_x - dx
             door.location.x = pivot_x
             # Adjust mesh offset via origin shift
-            door.data.transform(
-                __import__("mathutils").Matrix.Translation((-offset_x, 0, 0))
-            )
+            door.data.transform(__import__("mathutils").Matrix.Translation((-offset_x, 0, 0)))
 
     # Shelf (visible when door is open)
     if door_state == "open":

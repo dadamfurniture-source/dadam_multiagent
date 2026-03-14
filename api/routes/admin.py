@@ -33,11 +33,7 @@ async def list_constraints(
     require_admin(user)
     client = get_service_client()
 
-    query = (
-        client.table("learned_constraints")
-        .select("*")
-        .order("created_at", desc=True)
-    )
+    query = client.table("learned_constraints").select("*").order("created_at", desc=True)
     if status:
         query = query.eq("status", status)
     if category:
@@ -58,11 +54,7 @@ async def update_constraint(
     client = get_service_client()
 
     constraint = (
-        client.table("learned_constraints")
-        .select("*")
-        .eq("id", constraint_id)
-        .single()
-        .execute()
+        client.table("learned_constraints").select("*").eq("id", constraint_id).single().execute()
     )
     if not constraint.data:
         raise HTTPException(404, "제약조건을 찾을 수 없습니다.")
@@ -135,28 +127,26 @@ async def activate_lora_model(
     require_admin(user)
     client = get_service_client()
 
-    model = (
-        client.table("lora_model_versions")
-        .select("*")
-        .eq("id", model_id)
-        .single()
-        .execute()
-    )
+    model = client.table("lora_model_versions").select("*").eq("id", model_id).single().execute()
     if not model.data:
         raise HTTPException(404, "모델을 찾을 수 없습니다.")
 
     category = model.data["category"]
 
     # 기존 활성 모델 비활성화
-    client.table("lora_model_versions").update({
-        "is_active": False,
-    }).eq("category", category).eq("is_active", True).execute()
+    client.table("lora_model_versions").update(
+        {
+            "is_active": False,
+        }
+    ).eq("category", category).eq("is_active", True).execute()
 
     # 새 모델 활성화
-    client.table("lora_model_versions").update({
-        "is_active": True,
-        "activated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", model_id).execute()
+    client.table("lora_model_versions").update(
+        {
+            "is_active": True,
+            "activated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", model_id).execute()
 
     return APIResponse(
         message=f"{category} v{model.data['version']} 모델이 활성화되었습니다.",
@@ -201,12 +191,14 @@ async def get_training_queue(
         cat = item["category"]
         by_category[cat] = by_category.get(cat, 0) + 1
 
-    return APIResponse(data={
-        "items": result.data,
-        "total": result.count or 0,
-        "by_category": by_category,
-        "trigger_threshold": 50,
-    })
+    return APIResponse(
+        data={
+            "items": result.data,
+            "total": result.count or 0,
+            "by_category": by_category,
+            "trigger_threshold": 50,
+        }
+    )
 
 
 # ===== 수동 트리거 =====
@@ -241,7 +233,9 @@ async def manual_trigger(
     }
 
     if body.task not in task_map:
-        raise HTTPException(400, f"유효하지 않은 태스크: {body.task}. 가능: {list(task_map.keys())}")
+        raise HTTPException(
+            400, f"유효하지 않은 태스크: {body.task}. 가능: {list(task_map.keys())}"
+        )
 
     try:
         result = await task_map[body.task]()
@@ -266,11 +260,6 @@ async def list_calibrations(
     require_admin(user)
     client = get_service_client()
 
-    result = (
-        client.table("price_calibrations")
-        .select("*")
-        .order("category")
-        .execute()
-    )
+    result = client.table("price_calibrations").select("*").order("category").execute()
 
     return APIResponse(data={"calibrations": result.data})

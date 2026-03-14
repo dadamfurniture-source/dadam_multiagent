@@ -5,8 +5,9 @@ This is the key piece that solves the "sink position accuracy" problem:
 the 3D model guarantees exact placement at the layout-specified position.
 """
 
-import bpy
 import math
+
+import bpy
 
 
 def create_sink_module(
@@ -39,15 +40,18 @@ def create_sink_module(
     parent.name = f"SinkModule_{position_x}"
 
     # --- Sink basin (rectangular depression) ---
-    basin_width = width * 0.7   # 70% of module width
+    basin_width = width * 0.7  # 70% of module width
     basin_depth = depth * 0.55  # 55% of module depth
-    basin_height = 180          # 180mm deep
+    basin_height = 180  # 180mm deep
 
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(
-        center_x,
-        center_y,
-        countertop_z - basin_height / 2,
-    ))
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(
+            center_x,
+            center_y,
+            countertop_z - basin_height / 2,
+        ),
+    )
     basin = bpy.context.active_object
     basin.name = f"SinkBasin_{position_x}"
     basin.scale = (basin_width / 2, basin_depth / 2, basin_height / 2)
@@ -59,11 +63,14 @@ def create_sink_module(
     rim_depth = basin_depth + 20
     rim_height = 8
 
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(
-        center_x,
-        center_y,
-        countertop_z + rim_height / 2,
-    ))
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(
+            center_x,
+            center_y,
+            countertop_z + rim_height / 2,
+        ),
+    )
     rim = bpy.context.active_object
     rim.name = f"SinkRim_{position_x}"
     rim.scale = (rim_width / 2, rim_depth / 2, rim_height / 2)
@@ -102,11 +109,14 @@ def create_sink_module(
     spout.parent = parent
 
     # Faucet handle (small lever on top)
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(
-        center_x,
-        faucet_base_y,
-        countertop_z + faucet_height + 20,
-    ))
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(
+            center_x,
+            faucet_base_y,
+            countertop_z + faucet_height + 20,
+        ),
+    )
     handle = bpy.context.active_object
     handle.name = f"FaucetHandle_{position_x}"
     handle.scale = (30 / 2, 10 / 2, 40 / 2)

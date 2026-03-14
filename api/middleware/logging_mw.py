@@ -14,7 +14,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """모든 API 요청의 메서드, 경로, 상태코드, 응답시간을 로깅."""
 
     async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint,
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
     ) -> Response:
         # Static 파일, health check는 스킵
         path = request.url.path

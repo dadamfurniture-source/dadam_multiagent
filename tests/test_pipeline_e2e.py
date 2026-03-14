@@ -793,12 +793,12 @@ def test_production_readiness():
     assert "SecurityHeadersMiddleware" in main_source, "SecurityHeadersMiddleware not registered in main.py"
     print("  Security headers middleware (6 headers) OK")
 
-    # Async pipeline (BackgroundTasks)
+    # Async pipeline (SSE streaming or BackgroundTasks)
     projects_source = (Path(__file__).parent.parent / "api" / "routes" / "projects.py").read_text(encoding="utf-8")
-    assert "BackgroundTasks" in projects_source, "projects.py missing BackgroundTasks import"
-    assert "background_tasks.add_task" in projects_source, "projects.py missing background_tasks.add_task call"
     assert "pipeline_stage" in projects_source, "projects.py missing pipeline_stage tracking"
-    print("  Async pipeline with BackgroundTasks OK")
+    assert "StreamingResponse" in projects_source or "BackgroundTasks" in projects_source, \
+        "projects.py missing async pipeline mechanism (SSE or BackgroundTasks)"
+    print("  Async pipeline OK")
 
     # CI/CD pipeline
     ci_file = Path(__file__).parent.parent / ".github" / "workflows" / "ci.yml"

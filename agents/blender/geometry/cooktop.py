@@ -6,7 +6,6 @@ enforced in scene_builder.py by using create_drawer_cabinet() for cooktop module
 """
 
 import bpy
-import math
 
 
 def create_cooktop_module(
@@ -43,11 +42,14 @@ def create_cooktop_module(
     glass_depth = depth * 0.65
     glass_height = 5  # flush with countertop, slight raise
 
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(
-        center_x,
-        center_y,
-        countertop_z + glass_height / 2,
-    ))
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(
+            center_x,
+            center_y,
+            countertop_z + glass_height / 2,
+        ),
+    )
     glass = bpy.context.active_object
     glass.name = f"CooktopGlass_{position_x}"
     glass.scale = (glass_width / 2, glass_depth / 2, glass_height / 2)
@@ -127,11 +129,18 @@ def create_drawer_cabinet(
     parent.name = f"DrawerCabinet_{position_x}"
 
     # Side panels
-    for side, sx in [("L", position_x + panel_thickness / 2),
-                     ("R", position_x + width - panel_thickness / 2)]:
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(
-            sx, -position_y - depth / 2, toe_kick + cabinet_height / 2,
-        ))
+    for side, sx in [
+        ("L", position_x + panel_thickness / 2),
+        ("R", position_x + width - panel_thickness / 2),
+    ]:
+        bpy.ops.mesh.primitive_cube_add(
+            size=1,
+            location=(
+                sx,
+                -position_y - depth / 2,
+                toe_kick + cabinet_height / 2,
+            ),
+        )
         panel = bpy.context.active_object
         panel.name = f"DrawerSide_{side}_{position_x}"
         panel.scale = (panel_thickness / 2, depth / 2, cabinet_height / 2)
@@ -146,11 +155,14 @@ def create_drawer_cabinet(
         front_width = width - inset * 2
         pull_out = depth * 0.6 if door_state == "open" else 0
 
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(
-            position_x + width / 2,
-            -position_y - drawer_front_thickness / 2 + pull_out,
-            dz,
-        ))
+        bpy.ops.mesh.primitive_cube_add(
+            size=1,
+            location=(
+                position_x + width / 2,
+                -position_y - drawer_front_thickness / 2 + pull_out,
+                dz,
+            ),
+        )
         front = bpy.context.active_object
         front.name = f"DrawerFront_{i}_{position_x}"
         front.scale = (front_width / 2, drawer_front_thickness / 2, (drawer_height - inset) / 2)
@@ -163,11 +175,14 @@ def create_drawer_cabinet(
             box_depth = depth * 0.8
             box_height = drawer_height - 30
 
-            bpy.ops.mesh.primitive_cube_add(size=1, location=(
-                position_x + width / 2,
-                -position_y - depth / 2 + pull_out,
-                dz,
-            ))
+            bpy.ops.mesh.primitive_cube_add(
+                size=1,
+                location=(
+                    position_x + width / 2,
+                    -position_y - depth / 2 + pull_out,
+                    dz,
+                ),
+            )
             box = bpy.context.active_object
             box.name = f"DrawerBox_{i}_{position_x}"
             box.scale = (box_width / 2, box_depth / 2, box_height / 2)

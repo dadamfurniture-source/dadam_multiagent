@@ -31,11 +31,14 @@ def create_toe_kick(
     kick_depth = depth - setback
     thickness = 12
 
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(
-        position_x + width / 2,
-        -position_y - setback - kick_depth / 2,
-        height / 2,
-    ))
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(
+            position_x + width / 2,
+            -position_y - setback - kick_depth / 2,
+            height / 2,
+        ),
+    )
     kick = bpy.context.active_object
     kick.name = f"ToeKick_{position_x}"
     kick.scale = (width / 2, thickness / 2, height / 2)

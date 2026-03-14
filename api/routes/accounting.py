@@ -33,12 +33,7 @@ async def list_revenue(
     client = get_service_client()
 
     # 유저의 주문만 조회
-    user_orders = (
-        client.table("orders")
-        .select("id")
-        .eq("customer_id", user.id)
-        .execute()
-    )
+    user_orders = client.table("orders").select("id").eq("customer_id", user.id).execute()
     user_order_ids = [o["id"] for o in user_orders.data]
 
     if not user_order_ids:
@@ -86,12 +81,7 @@ async def list_expense(
 
     client = get_service_client()
 
-    user_orders = (
-        client.table("orders")
-        .select("id")
-        .eq("customer_id", user.id)
-        .execute()
-    )
+    user_orders = client.table("orders").select("id").eq("customer_id", user.id).execute()
     user_order_ids = [o["id"] for o in user_orders.data]
 
     if not user_order_ids:
@@ -160,26 +150,28 @@ async def get_order_pnl(
     gross_profit = total_rev - total_exp
     margin = gross_profit / total_rev if total_rev > 0 else 0
 
-    return APIResponse(data={
-        "order_id": order_id,
-        "order_number": order.data.get("order_number"),
-        "contract_amount": order.data.get("contract_amount", 0),
-        "revenue": {
-            "total": total_rev,
-            "collected": collected,
-            "outstanding": total_rev - collected,
-            "entries": revenues.data,
-        },
-        "expense": {
-            "total": total_exp,
-            "paid": paid,
-            "outstanding": total_exp - paid,
-            "by_category": exp_by_cat,
-            "entries": expenses.data,
-        },
-        "gross_profit": gross_profit,
-        "margin_rate": round(margin, 4),
-    })
+    return APIResponse(
+        data={
+            "order_id": order_id,
+            "order_number": order.data.get("order_number"),
+            "contract_amount": order.data.get("contract_amount", 0),
+            "revenue": {
+                "total": total_rev,
+                "collected": collected,
+                "outstanding": total_rev - collected,
+                "entries": revenues.data,
+            },
+            "expense": {
+                "total": total_exp,
+                "paid": paid,
+                "outstanding": total_exp - paid,
+                "by_category": exp_by_cat,
+                "entries": expenses.data,
+            },
+            "gross_profit": gross_profit,
+            "margin_rate": round(margin, 4),
+        }
+    )
 
 
 @router.get("/summary", response_model=APIResponse)
@@ -196,36 +188,35 @@ async def get_monthly_summary(
     end = f"{year}-{month + 1:02d}-01" if month < 12 else f"{year + 1}-01-01"
 
     # 유저의 주문 ID 목록
-    user_orders = (
-        client.table("orders")
-        .select("id")
-        .eq("customer_id", user.id)
-        .execute()
-    )
+    user_orders = client.table("orders").select("id").eq("customer_id", user.id).execute()
     user_order_ids = [o["id"] for o in user_orders.data]
 
     if not user_order_ids:
-        return APIResponse(data={
-            "period": f"{year}-{month:02d}",
-            "revenue": {"total": 0, "collected": 0},
-            "expense": {"total": 0, "paid": 0},
-            "gross_profit": 0,
-            "cash_flow": 0,
-            "overdue": {"receivable": 0, "payable": 0},
-        })
+        return APIResponse(
+            data={
+                "period": f"{year}-{month:02d}",
+                "revenue": {"total": 0, "collected": 0},
+                "expense": {"total": 0, "paid": 0},
+                "gross_profit": 0,
+                "cash_flow": 0,
+                "overdue": {"receivable": 0, "payable": 0},
+            }
+        )
 
     revenues = (
         client.table("revenue_entries")
         .select("category, amount, status")
         .in_("order_id", user_order_ids)
-        .gte("created_at", start).lt("created_at", end)
+        .gte("created_at", start)
+        .lt("created_at", end)
         .execute()
     )
     expenses = (
         client.table("expense_entries")
         .select("category, amount, status")
         .in_("order_id", user_order_ids)
-        .gte("created_at", start).lt("created_at", end)
+        .gte("created_at", start)
+        .lt("created_at", end)
         .execute()
     )
 
@@ -251,14 +242,16 @@ async def get_monthly_summary(
         .execute()
     )
 
-    return APIResponse(data={
-        "period": f"{year}-{month:02d}",
-        "revenue": {"total": rev_total, "collected": rev_collected},
-        "expense": {"total": exp_total, "paid": exp_paid},
-        "gross_profit": rev_total - exp_total,
-        "cash_flow": rev_collected - exp_paid,
-        "overdue": {
-            "receivable": sum(r["amount"] for r in overdue_rev.data),
-            "payable": sum(e["amount"] for e in overdue_exp.data),
-        },
-    })
+    return APIResponse(
+        data={
+            "period": f"{year}-{month:02d}",
+            "revenue": {"total": rev_total, "collected": rev_collected},
+            "expense": {"total": exp_total, "paid": exp_paid},
+            "gross_profit": rev_total - exp_total,
+            "cash_flow": rev_collected - exp_paid,
+            "overdue": {
+                "receivable": sum(r["amount"] for r in overdue_rev.data),
+                "payable": sum(e["amount"] for e in overdue_exp.data),
+            },
+        }
+    )

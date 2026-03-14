@@ -6,7 +6,6 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from agents.layout_engine import (
     OPEN_DOOR_CONTENTS,
-    distribute_modules,
     plan_layout,
 )
 
@@ -61,10 +60,12 @@ async def plan_furniture_layout(args: dict) -> dict:
     )
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps(result, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(result, ensure_ascii=False),
+            }
+        ]
     }
 
 
@@ -86,10 +87,12 @@ async def get_open_door_contents(args: dict) -> dict:
     category = args["category"]
     contents = OPEN_DOOR_CONTENTS.get(category, "items neatly arranged on shelves")
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({"category": category, "contents": contents}),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"category": category, "contents": contents}),
+            }
+        ]
     }
 
 

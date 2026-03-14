@@ -66,7 +66,10 @@ async def render_cabinet_scene(
 
     logger.info(
         "Blender render: %s state=%s modules=%d [%s]",
-        category, door_state, len(scene_config["modules"]), run_id,
+        category,
+        door_state,
+        len(scene_config["modules"]),
+        run_id,
     )
 
     try:
@@ -74,15 +77,15 @@ async def render_cabinet_scene(
             "blender",
             "--background",
             "--factory-startup",
-            "--python", SCENE_BUILDER_SCRIPT,
-            "--", input_path,
+            "--python",
+            SCENE_BUILDER_SCRIPT,
+            "--",
+            input_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
         if proc.returncode != 0:
             err_msg = stderr.decode(errors="replace")[-500:]

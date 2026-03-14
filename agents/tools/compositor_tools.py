@@ -76,9 +76,7 @@ async def composite_render_onto_photo(
     # Step 2: AI harmonization via Gemini
     style_instruction = ""
     if reference_images:
-        style_instruction = (
-            "Match the style, color, and texture of the reference images provided. "
-        )
+        style_instruction = "Match the style, color, and texture of the reference images provided. "
 
     harmonize_prompt = (
         f"Make this composited {category} furniture photorealistic. "

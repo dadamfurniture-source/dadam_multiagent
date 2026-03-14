@@ -11,8 +11,8 @@ import json
 import logging
 
 import httpx
-from PIL import Image, ImageDraw
 from claude_agent_sdk import create_sdk_mcp_server, tool
+from PIL import Image, ImageDraw
 
 from shared.config import settings
 from shared.constants import LORA_MODELS
@@ -48,21 +48,25 @@ async def _call_gemini_image(
 
     parts = []
     if reference_image_b64:
-        parts.append({
-            "inlineData": {
-                "mimeType": "image/png",
-                "data": reference_image_b64,
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": "image/png",
+                    "data": reference_image_b64,
+                }
             }
-        })
+        )
     # 참고 이미지 추가 (스타일 레퍼런스 등)
     if extra_images:
         for img_b64 in extra_images[:2]:  # 최대 2장
-            parts.append({
-                "inlineData": {
-                    "mimeType": "image/png",
-                    "data": img_b64,
+            parts.append(
+                {
+                    "inlineData": {
+                        "mimeType": "image/png",
+                        "data": img_b64,
+                    }
                 }
-            })
+            )
     parts.append({"text": prompt})
 
     body = {
@@ -218,8 +222,16 @@ def _create_furniture_mask(
 
     draw.rectangle([x1, y1, x2, y2], fill=255)
 
-    logger.info("Mask region: layout=%s, rect=(%d,%d,%d,%d) on %dx%d",
-                wall_layout, x1, y1, x2, y2, width, height)
+    logger.info(
+        "Mask region: layout=%s, rect=(%d,%d,%d,%d) on %dx%d",
+        wall_layout,
+        x1,
+        y1,
+        x2,
+        y2,
+        width,
+        height,
+    )
 
     buf = io.BytesIO()
     mask.save(buf, format="PNG")
@@ -251,6 +263,7 @@ def _composite_inpaint_result(
 
     # Feather the mask edges for natural blending (5px gaussian blur)
     from PIL import ImageFilter
+
     mask_feathered = mask.filter(ImageFilter.GaussianBlur(radius=5))
 
     # Composite: original where mask=0 (black), inpainted where mask=255 (white)
@@ -356,9 +369,7 @@ async def _call_replicate_inpaint(
 
                         # 합성: 원본 위에 가구 영역만 붙여넣기
                         # 마스크 외 영역은 원본 픽셀 그대로
-                        composited = _composite_inpaint_result(
-                            image_b64, raw_result_b64, mask_b64
-                        )
+                        composited = _composite_inpaint_result(image_b64, raw_result_b64, mask_b64)
                         logger.info("Composited inpaint result onto original")
                         return composited
 
@@ -408,10 +419,12 @@ async def generate_cleanup(args: dict) -> dict:
 
     result_b64 = await _call_gemini_image(prompt, args["original_image_b64"])
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({"image_base64": result_b64, "stage": "cleanup"}),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"image_base64": result_b64, "stage": "cleanup"}),
+            }
+        ]
     }
 
 
@@ -450,10 +463,12 @@ async def generate_furniture(args: dict) -> dict:
 
     result_b64 = await _call_flux_lora(args["category"], prompt)
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({"image_base64": result_b64, "stage": "furniture"}),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"image_base64": result_b64, "stage": "furniture"}),
+            }
+        ]
     }
 
 
@@ -483,10 +498,12 @@ async def generate_correction(args: dict) -> dict:
     prompt = args["correction_prompt"]
     result_b64 = await _call_gemini_image(prompt, args["furniture_image_b64"])
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({"image_base64": result_b64, "stage": "correction"}),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"image_base64": result_b64, "stage": "correction"}),
+            }
+        ]
     }
 
 
@@ -513,14 +530,14 @@ async def generate_correction(args: dict) -> dict:
     },
 )
 async def generate_open(args: dict) -> dict:
-    result_b64 = await _call_gemini_image(
-        args["open_prompt"], args["furniture_image_b64"]
-    )
+    result_b64 = await _call_gemini_image(args["open_prompt"], args["furniture_image_b64"])
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({"image_base64": result_b64, "stage": "open"}),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps({"image_base64": result_b64, "stage": "open"}),
+            }
+        ]
     }
 
 

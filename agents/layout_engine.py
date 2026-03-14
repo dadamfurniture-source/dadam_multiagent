@@ -38,6 +38,7 @@ OPEN_DOOR_CONTENTS: dict[str, str] = {
 @dataclass
 class Module:
     """A single furniture module"""
+
     width: int  # mm
     is_2door: bool = False
     module_type: str = "cabinet"  # cabinet, sink_bowl, cooktop, drawer
@@ -47,6 +48,7 @@ class Module:
 @dataclass
 class LayoutResult:
     """Result of module distribution"""
+
     modules: list[Module] = field(default_factory=list)
     door_width: int = 0
     door_count: int = 0
@@ -57,6 +59,7 @@ class LayoutResult:
 @dataclass
 class SpaceSegment:
     """A free segment of wall space between fixed elements"""
+
     start_x: int
     width: int
 
@@ -130,9 +133,7 @@ def find_best_door_width(
     return None
 
 
-def distribute_modules(
-    total_space: int, prefer_exact: bool = False
-) -> LayoutResult:
+def distribute_modules(total_space: int, prefer_exact: bool = False) -> LayoutResult:
     """Distribute modules evenly across available space.
 
     Algorithm:
@@ -166,16 +167,19 @@ def distribute_modules(
             gap = total_space - width * count
             target_diff = abs(width - DOOR_TARGET_WIDTH)
             is_primary = (
-                (0 <= gap < MIN_REMAINDER) if prefer_exact
+                (0 <= gap < MIN_REMAINDER)
+                if prefer_exact
                 else (MIN_REMAINDER <= gap <= MAX_REMAINDER)
             )
-            all_results.append({
-                "door_count": count,
-                "door_width": width,
-                "gap": gap,
-                "target_diff": target_diff,
-                "is_primary": is_primary,
-            })
+            all_results.append(
+                {
+                    "door_count": count,
+                    "door_width": width,
+                    "gap": gap,
+                    "target_diff": target_diff,
+                    "is_primary": is_primary,
+                }
+            )
 
     # Sort: is_primary first → closest to target → smallest gap
     all_results.sort(key=lambda r: (not r["is_primary"], r["target_diff"], r["gap"]))
@@ -204,20 +208,24 @@ def distribute_modules(
 
     # 2-door modules
     for _ in range(quotient):
-        modules.append(Module(
-            width=door_width * 2,
-            is_2door=True,
-            position_x=x,
-        ))
+        modules.append(
+            Module(
+                width=door_width * 2,
+                is_2door=True,
+                position_x=x,
+            )
+        )
         x += door_width * 2
 
     # 1-door module (if odd count)
     if remainder_doors > 0:
-        modules.append(Module(
-            width=door_width,
-            is_2door=False,
-            position_x=x,
-        ))
+        modules.append(
+            Module(
+                width=door_width,
+                is_2door=False,
+                position_x=x,
+            )
+        )
         x += door_width
 
     return LayoutResult(
@@ -267,9 +275,7 @@ def plan_layout(
         else:
             # Default: left side for sink category
             sx = finish_left
-        fixed_modules.append(Module(
-            width=sink_w, module_type="sink_bowl", position_x=sx
-        ))
+        fixed_modules.append(Module(width=sink_w, module_type="sink_bowl", position_x=sx))
 
     if "cooktop" in defaults:
         cooktop_w = defaults["cooktop"]
@@ -278,9 +284,7 @@ def plan_layout(
         else:
             # Default: right side
             cx = wall_width - finish_right - cooktop_w
-        fixed_modules.append(Module(
-            width=cooktop_w, module_type="cooktop", position_x=cx
-        ))
+        fixed_modules.append(Module(width=cooktop_w, module_type="cooktop", position_x=cx))
 
     # Sort fixed modules by position
     fixed_modules.sort(key=lambda m: m.position_x)
@@ -353,7 +357,9 @@ def plan_layout(
         "total_module_width": total_module_width,
         "remainder_mm": total_remainder,
         "module_count": len(all_modules),
-        "door_count": sum(2 if m.is_2door else 1 for m in all_modules if m.module_type == "cabinet"),
+        "door_count": sum(
+            2 if m.is_2door else 1 for m in all_modules if m.module_type == "cabinet"
+        ),
         "modules": [
             {
                 "type": m.module_type,

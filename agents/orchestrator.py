@@ -3,7 +3,6 @@
 파이프라인: 공간분석 → 배치계획 → 이미지생성 → 견적산출
 """
 
-import asyncio
 import base64
 import json
 import logging
@@ -12,20 +11,19 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
+from agents.tools.compositor_tools import composite_render_onto_photo
 from agents.tools.image_tools import (
-    _call_flux_lora,
     _call_gemini_image,
     _call_replicate_inpaint,
     _create_furniture_mask,
 )
-from agents.tools.compositor_tools import composite_render_onto_photo
 from agents.tools.pricing_tools import (
     BASE_PRICES,
     COUNTERTOP_PRICES,
     INSTALLATION_BASE,
 )
 from agents.tools.vision_tools import _call_claude_vision
-from shared.constants import CATEGORIES, CATEGORIES_EN, PLANS
+from shared.constants import CATEGORIES_EN
 from shared.supabase_client import get_service_client
 
 logger = logging.getLogger(__name__)
@@ -42,12 +40,10 @@ STYLE_GUIDE = {
         "Glass doors with aluminum frames (silver frame with sky blue glass)."
     ),
     "classic": (
-        "elegant traditional wood panel finish with warm brown tones. "
-        "Brass or gold-tone handles."
+        "elegant traditional wood panel finish with warm brown tones. Brass or gold-tone handles."
     ),
     "natural": (
-        "natural wood grain finish with organic earth tones. "
-        "Matte finish, minimal hardware."
+        "natural wood grain finish with organic earth tones. Matte finish, minimal hardware."
     ),
     "industrial": (
         "dark matte finish with metal accents. "
@@ -172,11 +168,13 @@ async def _upload_image(project_id: str, user_id: str, image_b64: str, image_typ
     # Remove trailing ? from URL
     image_url = image_url.rstrip("?")
 
-    client.table("generated_images").insert({
-        "project_id": project_id,
-        "image_url": image_url,
-        "type": image_type,
-    }).execute()
+    client.table("generated_images").insert(
+        {
+            "project_id": project_id,
+            "image_url": image_url,
+            "type": image_type,
+        }
+    ).execute()
 
     return image_url
 
@@ -184,9 +182,11 @@ async def _upload_image(project_id: str, user_id: str, image_b64: str, image_typ
 def _update_stage(project_id: str, stage: str):
     """Update project pipeline stage."""
     client = get_service_client()
-    client.table("projects").update({
-        "pipeline_stage": stage,
-    }).eq("id", project_id).execute()
+    client.table("projects").update(
+        {
+            "pipeline_stage": stage,
+        }
+    ).eq("id", project_id).execute()
 
 
 async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]:
@@ -221,7 +221,9 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             f"Analyze this photo and return the JSON output as specified above."
         )
         space_result = await _call_claude_vision(image_b64, analysis_prompt, media_type)
-        logger.info("Space analysis complete: %s", json.dumps(space_result, ensure_ascii=False)[:200])
+        logger.info(
+            "Space analysis complete: %s", json.dumps(space_result, ensure_ascii=False)[:200]
+        )
     except Exception as e:
         logger.error("Space analysis failed: %s", e)
         # 기본값으로 계속 진행
@@ -232,15 +234,19 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     # DB에 공간 분석 저장
     try:
-        client.table("space_analyses").insert({
-            "project_id": request.project_id,
-            "original_image_url": request.image_url,
-            "analysis_json": space_result,
-            "walls": space_result.get("wall_dimensions_mm"),
-            "pipes": space_result.get("utility_positions"),
-            "space_summary": f"Wall {space_result.get('wall_dimensions_mm', {}).get('width', 3000)}mm x {space_result.get('wall_dimensions_mm', {}).get('height', 2400)}mm",
-            "confidence": float(space_result["confidence"]) if isinstance(space_result.get("confidence"), (int, float)) else 0.7,
-        }).execute()
+        client.table("space_analyses").insert(
+            {
+                "project_id": request.project_id,
+                "original_image_url": request.image_url,
+                "analysis_json": space_result,
+                "walls": space_result.get("wall_dimensions_mm"),
+                "pipes": space_result.get("utility_positions"),
+                "space_summary": f"Wall {space_result.get('wall_dimensions_mm', {}).get('width', 3000)}mm x {space_result.get('wall_dimensions_mm', {}).get('height', 2400)}mm",
+                "confidence": float(space_result["confidence"])
+                if isinstance(space_result.get("confidence"), (int, float))
+                else 0.7,
+            }
+        ).execute()
     except Exception as e:
         logger.warning("Failed to save space analysis: %s", e)
 
@@ -269,21 +275,25 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         if "error" in layout_data:
             logger.warning("Layout returned error: %s", layout_data["error"])
         else:
-            logger.info("Layout plan: %d modules, %dmm total",
-                        layout_data.get("module_count", 0),
-                        layout_data.get("total_module_width", 0))
+            logger.info(
+                "Layout plan: %d modules, %dmm total",
+                layout_data.get("module_count", 0),
+                layout_data.get("total_module_width", 0),
+            )
     except Exception as e:
         logger.error("Layout planning failed: %s", e)
         layout_data = {"modules": [], "error": str(e)}
 
     # DB에 배치 저장
     try:
-        client.table("layouts").insert({
-            "project_id": request.project_id,
-            "layout_json": layout_data,
-            "modules": layout_data.get("modules", []),
-            "total_width_mm": layout_data.get("total_width", wall_width),
-        }).execute()
+        client.table("layouts").insert(
+            {
+                "project_id": request.project_id,
+                "layout_json": layout_data,
+                "modules": layout_data.get("modules", []),
+                "total_width_mm": layout_data.get("total_width", wall_width),
+            }
+        ).execute()
     except Exception as e:
         logger.warning("Failed to save layout: %s", e)
 
@@ -294,7 +304,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     _update_stage(request.project_id, "image_gen")
 
     category_name = CATEGORIES_EN.get(request.category, request.category)
-    style_desc = STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
+    STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
     module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
 
     # 벽 형태 (1자/L자/U자) — Claude Vision 분석 결과
@@ -317,7 +327,9 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         parts = []
         if sink_pos:
             pct = int(sink_pos / wall_width * 100) if wall_width > 0 else 30
-            parts.append(f"Stainless steel sink bowl EXACTLY at {pct}% from left (water pipe position)")
+            parts.append(
+                f"Stainless steel sink bowl EXACTLY at {pct}% from left (water pipe position)"
+            )
         if cooktop_pos:
             pct2 = int(cooktop_pos / wall_width * 100) if wall_width > 0 else 70
             parts.append(f"cooktop zone with DRAWERS below at {pct2}% from left")
@@ -372,7 +384,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
             # Composite + Harmonize (closed doors)
             furniture_b64 = await composite_render_onto_photo(
-                cleanup_b64, closed_render, style, request.category,
+                cleanup_b64,
+                closed_render,
+                style,
+                request.category,
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
@@ -380,7 +395,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
             # Composite + Harmonize (open doors)
             open_b64 = await composite_render_onto_photo(
-                cleanup_b64, open_render, style, request.category,
+                cleanup_b64,
+                open_render,
+                style,
+                request.category,
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
@@ -411,7 +429,9 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         )
         if len(furniture_prompt) > 500:
             furniture_prompt = furniture_prompt[:497] + "..."
-        logger.info("Furniture prompt (%d chars): %s", len(furniture_prompt), furniture_prompt[:200])
+        logger.info(
+            "Furniture prompt (%d chars): %s", len(furniture_prompt), furniture_prompt[:200]
+        )
 
         try:
             furniture_b64 = await _call_gemini_image(
@@ -431,9 +451,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                     "Keep wall color, tiles, lighting EXACTLY."
                 )
                 cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
-                mask_b64 = _create_furniture_mask(
-                    cleanup_b64, request.category, space_result
-                )
+                mask_b64 = _create_furniture_mask(cleanup_b64, request.category, space_result)
                 neg_prompt = ""
                 if wall_layout == "straight":
                     neg_prompt = "L-shaped, corner cabinet, wraparound, bent, angled"
@@ -484,10 +502,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             width_str = str(m.get("width", 600))
             base_price = BASE_PRICES.get("base_cabinet", {}).get(width_str, 180_000)
             subtotal += base_price
-            quote_items.append({
-                "module": f"{m.get('type', 'cabinet')} {width_str}mm",
-                "price": base_price,
-            })
+            quote_items.append(
+                {
+                    "module": f"{m.get('type', 'cabinet')} {width_str}mm",
+                    "price": base_price,
+                }
+            )
 
         # 설치비
         installation = INSTALLATION_BASE.get(request.category, 150_000)
@@ -509,14 +529,16 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             "total": total,
         }
 
-        client.table("quotes").insert({
-            "project_id": request.project_id,
-            "items_json": quote_data,
-            "subtotal": subtotal,
-            "installation_fee": installation,
-            "tax_amount": vat,
-            "total_price": total,
-        }).execute()
+        client.table("quotes").insert(
+            {
+                "project_id": request.project_id,
+                "items_json": quote_data,
+                "subtotal": subtotal,
+                "installation_fee": installation,
+                "tax_amount": vat,
+                "total_price": total,
+            }
+        ).execute()
 
         logger.info("Quote: %s KRW", f"{total:,}")
     except Exception as e:

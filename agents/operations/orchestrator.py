@@ -16,12 +16,13 @@ from agents.operations.prompts import (
     SCHEDULE_AGENT_PROMPT,
 )
 
-
 # ===== 운영 요청 타입 =====
+
 
 @dataclass
 class OrderEvent:
     """주문 생명주기 이벤트"""
+
     event_type: str  # status_change | payment_received | schedule_trigger | as_request | manual
     order_id: str
     data: dict | None = None
@@ -29,6 +30,7 @@ class OrderEvent:
 
 
 # ===== 운영 에이전트 빌더 =====
+
 
 def _build_operations_agents() -> dict[str, AgentDefinition]:
     """운영본부 전체 에이전트 구성"""
@@ -132,8 +134,14 @@ EVENT_ROUTING = {
     # 상태 변경 이벤트 → 어떤 에이전트가 처리?
     "payment_received:contract_deposit": [
         ("accounting", "계약금 {amount}원이 입금되었습니다. 매출 전표를 생성하세요."),
-        ("ordering", "계약이 확정되었습니다. BOM 기반으로 자재 발주서를 생성하고 공장에 제작을 의뢰하세요."),
-        ("scheduler", "계약이 확정되었습니다. 표준 리드타임 기반으로 전체 프로젝트 일정을 생성하세요."),
+        (
+            "ordering",
+            "계약이 확정되었습니다. BOM 기반으로 자재 발주서를 생성하고 공장에 제작을 의뢰하세요.",
+        ),
+        (
+            "scheduler",
+            "계약이 확정되었습니다. 표준 리드타임 기반으로 전체 프로젝트 일정을 생성하세요.",
+        ),
         ("notifier", "고객에게 '계약금 입금 확인 + 제작 일정 안내' 알림을 발송하세요."),
     ],
     "payment_received:interim": [
@@ -141,11 +149,17 @@ EVENT_ROUTING = {
         ("notifier", "고객에게 '중도금 입금 확인' 알림을 발송하세요."),
     ],
     "payment_received:balance": [
-        ("accounting", "잔금 {amount}원이 입금되었습니다. 매출 전표를 생성하고 프로젝트 최종 손익을 산출하세요."),
+        (
+            "accounting",
+            "잔금 {amount}원이 입금되었습니다. 매출 전표를 생성하고 프로젝트 최종 손익을 산출하세요.",
+        ),
         ("notifier", "고객에게 '잔금 입금 확인 + A/S 보증 안내' 알림을 발송하세요."),
     ],
     "status_change:manufactured": [
-        ("manufacturing", "공장에서 제작 완료 보고가 들어왔습니다. 품질 검수 체크리스트를 작성하세요."),
+        (
+            "manufacturing",
+            "공장에서 제작 완료 보고가 들어왔습니다. 품질 검수 체크리스트를 작성하세요.",
+        ),
         ("accounting", "제작비 매입 전표를 생성하세요."),
         ("scheduler", "제작이 완료되었습니다. 배송/설치 일정을 확정하세요."),
         ("notifier", "고객에게 '제작 완료 + 설치 예정일 안내' 알림을 발송하세요."),
@@ -156,7 +170,10 @@ EVENT_ROUTING = {
         ("notifier", "고객에게 '설치 완료 + 잔금 안내' 알림을 발송하세요."),
     ],
     "as_request": [
-        ("after-service", "A/S 요청이 접수되었습니다. 사진을 분석하여 원인을 분류하고, 보증기간을 확인하여 기사를 배정하세요."),
+        (
+            "after-service",
+            "A/S 요청이 접수되었습니다. 사진을 분석하여 원인을 분류하고, 보증기간을 확인하여 기사를 배정하세요.",
+        ),
     ],
     "schedule_reminder": [
         ("notifier", "내일 예정된 일정이 있습니다. 관련 담당자와 고객에게 알림을 발송하세요."),
@@ -173,7 +190,12 @@ async def handle_operations_event(event: OrderEvent) -> AsyncGenerator[dict, Non
 
     이벤트 타입에 따라 적절한 에이전트들을 자동 호출합니다.
     """
-    yield {"type": "ops_status", "stage": "started", "event": event.event_type, "order_id": event.order_id}
+    yield {
+        "type": "ops_status",
+        "stage": "started",
+        "event": event.event_type,
+        "order_id": event.order_id,
+    }
 
     agents = _build_operations_agents()
 
@@ -196,7 +218,7 @@ async def handle_operations_event(event: OrderEvent) -> AsyncGenerator[dict, Non
 """
     else:
         task_instructions = "\n".join(
-            f"{i+1}. {agent_name} 에이전트: {instruction.format(**(event.data or {}))}"
+            f"{i + 1}. {agent_name} 에이전트: {instruction.format(**(event.data or {}))}"
             for i, (agent_name, instruction) in enumerate(tasks)
         )
         prompt = f"""
@@ -232,7 +254,7 @@ async def handle_operations_event(event: OrderEvent) -> AsyncGenerator[dict, Non
 
 async def run_consultation(order_id: str, action: str, data: dict | None = None):
     """상담 에이전트 직접 호출"""
-    event = OrderEvent(
+    OrderEvent(
         event_type="manual",
         order_id=order_id,
         data={"action": action, **(data or {})},

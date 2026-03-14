@@ -4,9 +4,9 @@ The camera parameters come from Claude Vision's space analysis (STEP 6).
 Perfect accuracy isn't required since AI compositor corrects minor mismatches.
 """
 
-import bpy
 import math
 
+import bpy
 
 # Default camera parameters (typical Korean apartment kitchen photo)
 DEFAULT_CAMERA = {
@@ -35,7 +35,7 @@ def setup_camera(camera_params, wall_width=3000, wall_height=2400):
 
     # Camera position: centered on wall, at specified distance and height
     cam_x = wall_width / 2
-    cam_y = params["camera_distance_mm"]   # positive = in front of wall
+    cam_y = params["camera_distance_mm"]  # positive = in front of wall
     cam_z = params["camera_height_mm"]
 
     # Create camera
@@ -61,7 +61,7 @@ def setup_camera(camera_params, wall_width=3000, wall_height=2400):
 
     # Rotation: camera looks down -Z in its local space
     # We need to rotate it to face the wall
-    rot_x = math.atan2(math.sqrt(dx ** 2 + dy ** 2), -dz) - math.pi
+    rot_x = math.atan2(math.sqrt(dx**2 + dy**2), -dz) - math.pi
     rot_z = math.atan2(dx, -dy)
 
     # Apply tilt adjustment

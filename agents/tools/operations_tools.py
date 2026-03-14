@@ -4,8 +4,8 @@ import json
 from datetime import date, datetime, timedelta
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
-from shared.supabase_client import get_service_client as _get_client
 
+from shared.supabase_client import get_service_client as _get_client
 
 # ===== 주문 관리 =====
 
@@ -20,9 +20,17 @@ from shared.supabase_client import get_service_client as _get_client
             "new_status": {
                 "type": "string",
                 "enum": [
-                    "consulting", "quoted", "contracted", "ordering",
-                    "manufacturing", "manufactured", "installing",
-                    "installed", "as_received", "as_completed", "settled",
+                    "consulting",
+                    "quoted",
+                    "contracted",
+                    "ordering",
+                    "manufacturing",
+                    "manufactured",
+                    "installing",
+                    "installed",
+                    "as_received",
+                    "as_completed",
+                    "settled",
                 ],
             },
             "reason": {"type": "string", "description": "상태 변경 사유"},
@@ -55,33 +63,41 @@ async def update_order_status(args: dict) -> dict:
     allowed = valid_transitions.get(current_status, [])
     if args["new_status"] not in allowed:
         return {
-            "content": [{
-                "type": "text",
-                "text": f"상태 전이 불가: {current_status} → {args['new_status']}. "
-                        f"허용: {allowed}",
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"상태 전이 불가: {current_status} → {args['new_status']}. "
+                    f"허용: {allowed}",
+                }
+            ]
         }
 
     # 상태 업데이트
-    client.table("orders").update({
-        "status": args["new_status"],
-        "updated_at": datetime.utcnow().isoformat(),
-    }).eq("id", args["order_id"]).execute()
+    client.table("orders").update(
+        {
+            "status": args["new_status"],
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+    ).eq("id", args["order_id"]).execute()
 
     # 이력 기록
-    client.table("order_status_history").insert({
-        "order_id": args["order_id"],
-        "from_status": current_status,
-        "to_status": args["new_status"],
-        "changed_by": args.get("changed_by"),
-        "reason": args.get("reason"),
-    }).execute()
+    client.table("order_status_history").insert(
+        {
+            "order_id": args["order_id"],
+            "from_status": current_status,
+            "to_status": args["new_status"],
+            "changed_by": args.get("changed_by"),
+            "reason": args.get("reason"),
+        }
+    ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"주문 상태 변경: {current_status} → {args['new_status']}",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"주문 상태 변경: {current_status} → {args['new_status']}",
+            }
+        ]
     }
 
 
@@ -98,9 +114,14 @@ async def update_order_status(args: dict) -> dict:
             "type": {
                 "type": "string",
                 "enum": [
-                    "measurement", "material_delivery", "manufacturing_start",
-                    "manufacturing_end", "quality_check", "delivery",
-                    "installation", "as_visit",
+                    "measurement",
+                    "material_delivery",
+                    "manufacturing_start",
+                    "manufacturing_end",
+                    "quality_check",
+                    "delivery",
+                    "installation",
+                    "as_visit",
                 ],
             },
             "title": {"type": "string"},
@@ -133,29 +154,35 @@ async def create_schedule(args: dict) -> dict:
 
         if len(conflicts.data) >= 2:  # 일 최대 2건
             return {
-                "content": [{
-                    "type": "text",
-                    "text": f"충돌: 담당자가 해당일에 이미 {len(conflicts.data)}건 배정됨. "
-                            f"다른 날짜 또는 담당자를 선택하세요.",
-                }]
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"충돌: 담당자가 해당일에 이미 {len(conflicts.data)}건 배정됨. "
+                        f"다른 날짜 또는 담당자를 선택하세요.",
+                    }
+                ]
             }
 
-    result = client.table("schedules").insert({
-        "order_id": args["order_id"],
-        "type": args["type"],
-        "title": args["title"],
-        "scheduled_at": args["scheduled_at"],
-        "duration_min": args.get("duration_min", 60),
-        "assignee_id": args.get("assignee_id"),
-        "location": args.get("location"),
-        "status": "scheduled",
-    }).execute()
+    client.table("schedules").insert(
+        {
+            "order_id": args["order_id"],
+            "type": args["type"],
+            "title": args["title"],
+            "scheduled_at": args["scheduled_at"],
+            "duration_min": args.get("duration_min", 60),
+            "assignee_id": args.get("assignee_id"),
+            "location": args.get("location"),
+            "status": "scheduled",
+        }
+    ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"일정 생성: {args['title']} ({args['scheduled_at']})",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"일정 생성: {args['title']} ({args['scheduled_at']})",
+            }
+        ]
     }
 
 
@@ -203,20 +230,24 @@ async def check_availability(args: dict) -> dict:
             .execute()
         )
 
-        availability.append({
-            "resource_id": resource["id"],
-            "name": resource["name"],
-            "capacity": resource["capacity"],
-            "booked_count": len(schedules.data),
-            "available_slots": resource["capacity"] - len(schedules.data),
-            "bookings": schedules.data,
-        })
+        availability.append(
+            {
+                "resource_id": resource["id"],
+                "name": resource["name"],
+                "capacity": resource["capacity"],
+                "booked_count": len(schedules.data),
+                "available_slots": resource["capacity"] - len(schedules.data),
+                "bookings": schedules.data,
+            }
+        )
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps(availability, ensure_ascii=False, default=str),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(availability, ensure_ascii=False, default=str),
+            }
+        ]
     }
 
 
@@ -248,6 +279,7 @@ async def detect_conflicts(args: dict) -> dict:
 
     # 날짜+담당자별 그룹핑
     from collections import defaultdict
+
     daily_load = defaultdict(list)
     for s in schedules.data:
         if s.get("assignee_id"):
@@ -257,13 +289,15 @@ async def detect_conflicts(args: dict) -> dict:
 
     for key, items in daily_load.items():
         if len(items) > 2:
-            conflicts.append({
-                "type": "overbooked",
-                "assignee": key.split("_")[0],
-                "date": key.split("_")[1],
-                "count": len(items),
-                "items": [i["title"] for i in items],
-            })
+            conflicts.append(
+                {
+                    "type": "overbooked",
+                    "assignee": key.split("_")[0],
+                    "date": key.split("_")[1],
+                    "count": len(items),
+                    "items": [i["title"] for i in items],
+                }
+            )
 
     # 납기 위험 확인 (제작 종료 > 설치일)
     orders_at_risk = (
@@ -276,21 +310,29 @@ async def detect_conflicts(args: dict) -> dict:
 
     for order in orders_at_risk.data:
         if order.get("estimated_install"):
-            conflicts.append({
-                "type": "deadline_risk",
-                "order_id": order["id"],
-                "estimated_install": order["estimated_install"],
-                "current_status": order["status"],
-            })
+            conflicts.append(
+                {
+                    "type": "deadline_risk",
+                    "order_id": order["id"],
+                    "estimated_install": order["estimated_install"],
+                    "current_status": order["status"],
+                }
+            )
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps({
-                "conflicts_count": len(conflicts),
-                "conflicts": conflicts,
-            }, ensure_ascii=False, default=str),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(
+                    {
+                        "conflicts_count": len(conflicts),
+                        "conflicts": conflicts,
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                ),
+            }
+        ]
     }
 
 
@@ -319,15 +361,17 @@ async def create_revenue(args: dict) -> dict:
     client = _get_client()
     tax = int(args["amount"] * 0.1)
 
-    result = client.table("revenue_entries").insert({
-        "order_id": args["order_id"],
-        "category": args["category"],
-        "amount": args["amount"],
-        "tax_amount": tax,
-        "status": "pending",
-        "due_date": args.get("due_date"),
-        "notes": args.get("notes"),
-    }).execute()
+    client.table("revenue_entries").insert(
+        {
+            "order_id": args["order_id"],
+            "category": args["category"],
+            "amount": args["amount"],
+            "tax_amount": tax,
+            "status": "pending",
+            "due_date": args.get("due_date"),
+            "notes": args.get("notes"),
+        }
+    ).execute()
 
     category_names = {
         "contract_deposit": "계약금",
@@ -337,11 +381,13 @@ async def create_revenue(args: dict) -> dict:
     }
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"매출 전표 생성: {category_names.get(args['category'])} "
-                    f"{args['amount']:,}원 + 부가세 {tax:,}원 = {args['amount'] + tax:,}원",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"매출 전표 생성: {category_names.get(args['category'])} "
+                f"{args['amount']:,}원 + 부가세 {tax:,}원 = {args['amount'] + tax:,}원",
+            }
+        ]
     }
 
 
@@ -381,23 +427,27 @@ async def create_expense(args: dict) -> dict:
     client = _get_client()
     tax = int(args["amount"] * 0.1)
 
-    result = client.table("expense_entries").insert({
-        "order_id": args["order_id"],
-        "vendor_id": args.get("vendor_id"),
-        "category": args["category"],
-        "amount": args["amount"],
-        "tax_amount": tax,
-        "status": "pending",
-        "items_json": args.get("items"),
-        "po_number": args.get("po_number"),
-        "due_date": args.get("due_date"),
-    }).execute()
+    client.table("expense_entries").insert(
+        {
+            "order_id": args["order_id"],
+            "vendor_id": args.get("vendor_id"),
+            "category": args["category"],
+            "amount": args["amount"],
+            "tax_amount": tax,
+            "status": "pending",
+            "items_json": args.get("items"),
+            "po_number": args.get("po_number"),
+            "due_date": args.get("due_date"),
+        }
+    ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"매입 전표 생성: {args['category']} {args['amount']:,}원 + 부가세 {tax:,}원",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"매입 전표 생성: {args['category']} {args['amount']:,}원 + 부가세 {tax:,}원",
+            }
+        ]
     }
 
 
@@ -416,8 +466,12 @@ async def get_project_pnl(args: dict) -> dict:
     client = _get_client()
 
     order = client.table("orders").select("*").eq("id", args["order_id"]).single().execute()
-    revenues = client.table("revenue_entries").select("*").eq("order_id", args["order_id"]).execute()
-    expenses = client.table("expense_entries").select("*").eq("order_id", args["order_id"]).execute()
+    revenues = (
+        client.table("revenue_entries").select("*").eq("order_id", args["order_id"]).execute()
+    )
+    expenses = (
+        client.table("expense_entries").select("*").eq("order_id", args["order_id"]).execute()
+    )
 
     total_revenue = sum(r["amount"] for r in revenues.data)
     collected = sum(r["amount"] for r in revenues.data if r["status"] == "collected")
@@ -582,31 +636,38 @@ async def create_purchase_order(args: dict) -> dict:
 
     # PO 번호 자동 생성
     year = datetime.now().year
-    count = client.table("purchase_orders").select("id", count="exact").like(
-        "po_number", f"PO-{year}-%"
-    ).execute()
+    count = (
+        client.table("purchase_orders")
+        .select("id", count="exact")
+        .like("po_number", f"PO-{year}-%")
+        .execute()
+    )
     seq = (count.count or 0) + 1
     po_number = f"PO-{year}-{seq:04d}"
 
     total = sum(item.get("qty", 1) * item.get("unit_price", 0) for item in args["items"])
 
-    result = client.table("purchase_orders").insert({
-        "order_id": args["order_id"],
-        "vendor_id": args["vendor_id"],
-        "po_number": po_number,
-        "type": args["type"],
-        "items_json": args["items"],
-        "total_amount": total,
-        "status": "draft",
-        "expected_delivery": args.get("expected_delivery"),
-        "notes": args.get("notes"),
-    }).execute()
+    client.table("purchase_orders").insert(
+        {
+            "order_id": args["order_id"],
+            "vendor_id": args["vendor_id"],
+            "po_number": po_number,
+            "type": args["type"],
+            "items_json": args["items"],
+            "total_amount": total,
+            "status": "draft",
+            "expected_delivery": args.get("expected_delivery"),
+            "notes": args.get("notes"),
+        }
+    ).execute()
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"발주서 생성: {po_number} / 금액: {total:,}원 / 거래처: {args['vendor_id']}",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"발주서 생성: {po_number} / 금액: {total:,}원 / 거래처: {args['vendor_id']}",
+            }
+        ]
     }
 
 
@@ -633,7 +694,13 @@ async def create_as_ticket(args: dict) -> dict:
     client = _get_client()
 
     # 보증기간 확인 (설치 완료 후 1년)
-    order = client.table("orders").select("actual_install").eq("id", args["order_id"]).single().execute()
+    order = (
+        client.table("orders")
+        .select("actual_install")
+        .eq("id", args["order_id"])
+        .single()
+        .execute()
+    )
     install_date = order.data.get("actual_install")
     is_warranty = False
     warranty_expires = None
@@ -643,24 +710,28 @@ async def create_as_ticket(args: dict) -> dict:
         warranty_expires = (install_dt + timedelta(days=365)).date().isoformat()
         is_warranty = date.today().isoformat() <= warranty_expires
 
-    result = client.table("after_service_tickets").insert({
-        "order_id": args["order_id"],
-        "customer_id": args["customer_id"],
-        "type": args["type"],
-        "priority": args.get("priority", "normal"),
-        "description": args["description"],
-        "photos": args.get("photos", []),
-        "status": "received",
-        "is_warranty": is_warranty,
-        "warranty_expires": warranty_expires,
-    }).execute()
+    client.table("after_service_tickets").insert(
+        {
+            "order_id": args["order_id"],
+            "customer_id": args["customer_id"],
+            "type": args["type"],
+            "priority": args.get("priority", "normal"),
+            "description": args["description"],
+            "photos": args.get("photos", []),
+            "status": "received",
+            "is_warranty": is_warranty,
+            "warranty_expires": warranty_expires,
+        }
+    ).execute()
 
     warranty_text = "무상 보증 기간 내" if is_warranty else "보증 만료 (유상)"
     return {
-        "content": [{
-            "type": "text",
-            "text": f"A/S 티켓 생성: {args['type']} / {warranty_text} / 우선순위: {args.get('priority', 'normal')}",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"A/S 티켓 생성: {args['type']} / {warranty_text} / 우선순위: {args.get('priority', 'normal')}",
+            }
+        ]
     }
 
 
@@ -687,15 +758,17 @@ async def send_notification(args: dict) -> dict:
     client = _get_client()
 
     # DB에 알림 기록
-    client.table("notifications").insert({
-        "recipient_id": args["recipient_id"],
-        "recipient_type": args["recipient_type"],
-        "channel": args["channel"],
-        "title": args["title"],
-        "body": args["body"],
-        "related_order": args.get("related_order"),
-        "status": "pending",
-    }).execute()
+    client.table("notifications").insert(
+        {
+            "recipient_id": args["recipient_id"],
+            "recipient_type": args["recipient_type"],
+            "channel": args["channel"],
+            "title": args["title"],
+            "body": args["body"],
+            "related_order": args.get("related_order"),
+            "status": "pending",
+        }
+    ).execute()
 
     # TODO: 실제 발송 연동
     # kakao → 카카오 알림톡 API
@@ -704,10 +777,12 @@ async def send_notification(args: dict) -> dict:
     # slack → Slack Webhook
 
     return {
-        "content": [{
-            "type": "text",
-            "text": f"알림 발송 예약: [{args['channel']}] {args['title']} → {args['recipient_type']}",
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": f"알림 발송 예약: [{args['channel']}] {args['title']} → {args['recipient_type']}",
+            }
+        ]
     }
 
 
@@ -716,8 +791,16 @@ operations_server = create_sdk_mcp_server(
     name="operations",
     version="1.0.0",
     tools=[
-        update_order_status, create_schedule, check_availability, detect_conflicts,
-        create_revenue, create_expense, get_project_pnl, get_monthly_summary,
-        create_purchase_order, create_as_ticket, send_notification,
+        update_order_status,
+        create_schedule,
+        check_availability,
+        detect_conflicts,
+        create_revenue,
+        create_expense,
+        get_project_pnl,
+        get_monthly_summary,
+        create_purchase_order,
+        create_as_ticket,
+        send_notification,
     ],
 )

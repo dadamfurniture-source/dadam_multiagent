@@ -37,33 +37,38 @@ async def submit_feedback(
     client = get_service_client()
 
     # 1. 피드백 저장
-    feedback = client.table("customer_feedback").insert({
-        "project_id": body.project_id,
-        "order_id": body.order_id,
-        "user_id": user.id,
-        "overall_rating": body.overall_rating,
-        "design_rating": body.design_rating,
-        "image_rating": body.image_rating,
-        "quote_rating": body.quote_rating,
-        "install_rating": body.install_rating,
-        "selected_style": body.selected_style,
-        "comment": body.comment,
-        "installation_photos": body.installation_photos,
-        "feedback_type": body.feedback_type,
-    }).execute()
+    feedback = (
+        client.table("customer_feedback")
+        .insert(
+            {
+                "project_id": body.project_id,
+                "order_id": body.order_id,
+                "user_id": user.id,
+                "overall_rating": body.overall_rating,
+                "design_rating": body.design_rating,
+                "image_rating": body.image_rating,
+                "quote_rating": body.quote_rating,
+                "install_rating": body.install_rating,
+                "selected_style": body.selected_style,
+                "comment": body.comment,
+                "installation_photos": body.installation_photos,
+                "feedback_type": body.feedback_type,
+            }
+        )
+        .execute()
+    )
 
     # 2. 사례 DB에 평점 업데이트 (RAG 루프 ①)
     if body.project_id:
         existing_case = (
-            client.table("case_embeddings")
-            .select("id")
-            .eq("project_id", body.project_id)
-            .execute()
+            client.table("case_embeddings").select("id").eq("project_id", body.project_id).execute()
         )
         if existing_case.data:
-            client.table("case_embeddings").update({
-                "rating": body.overall_rating,
-            }).eq("project_id", body.project_id).execute()
+            client.table("case_embeddings").update(
+                {
+                    "rating": body.overall_rating,
+                }
+            ).eq("project_id", body.project_id).execute()
 
     # 3. 시공 사진을 LoRA 학습 대기열에 등록 (루프 ②)
     if body.installation_photos and body.project_id:
@@ -75,18 +80,26 @@ async def submit_feedback(
             .execute()
         )
         if project.data:
-            grade = "excellent" if body.overall_rating >= 5 else "high" if body.overall_rating >= 4 else "normal"
+            grade = (
+                "excellent"
+                if body.overall_rating >= 5
+                else "high"
+                if body.overall_rating >= 4
+                else "normal"
+            )
             for photo_url in body.installation_photos:
-                client.table("training_queue").insert({
-                    "image_url": photo_url,
-                    "category": project.data["category"],
-                    "style": project.data.get("style"),
-                    "quality_grade": grade,
-                    "source": "installation_photo",
-                    "project_id": body.project_id,
-                    "customer_rating": body.overall_rating,
-                    "status": "pending",
-                }).execute()
+                client.table("training_queue").insert(
+                    {
+                        "image_url": photo_url,
+                        "category": project.data["category"],
+                        "style": project.data.get("style"),
+                        "quality_grade": grade,
+                        "source": "installation_photo",
+                        "project_id": body.project_id,
+                        "customer_rating": body.overall_rating,
+                        "status": "pending",
+                    }
+                ).execute()
 
     return APIResponse(
         message="피드백이 등록되었습니다. 감사합니다!",
@@ -127,9 +140,7 @@ async def get_feedback_stats(
 
     # 학습된 제약조건
     constraints = (
-        client.table("learned_constraints")
-        .select("category, status", count="exact")
-        .execute()
+        client.table("learned_constraints").select("category, status", count="exact").execute()
     )
     applied_constraints = [c for c in constraints.data if c["status"] == "applied"]
     proposed_constraints = [c for c in constraints.data if c["status"] == "proposed"]
@@ -138,40 +149,43 @@ async def get_feedback_stats(
     feedbacks = client.table("customer_feedback").select("overall_rating").execute()
     avg_rating = (
         sum(f["overall_rating"] for f in feedbacks.data) / len(feedbacks.data)
-        if feedbacks.data else 0
+        if feedbacks.data
+        else 0
     )
 
-    return APIResponse(data={
-        "rag_loop": {
-            "total_cases": cases.count or 0,
-            "description": "유사 사례 검색용 벡터 DB",
-        },
-        "lora_loop": {
-            "training_queue_pending": training_pending.count or 0,
-            "active_models": len(active_models.data),
-            "models": active_models.data,
-            "description": "시공 사진 → LoRA 재학습",
-        },
-        "price_loop": {
-            "calibrated_categories": len(calibrations.data),
-            "calibrations": [
-                {
-                    "category": c["category"],
-                    "factor": c["correction_factor"],
-                    "samples": c["sample_count"],
-                }
-                for c in calibrations.data
-            ],
-            "description": "실거래 기반 가격 보정",
-        },
-        "constraint_loop": {
-            "applied": len(applied_constraints),
-            "proposed": len(proposed_constraints),
-            "total": constraints.count or 0,
-            "description": "A/S 패턴 → 설계 제약조건",
-        },
-        "overall": {
-            "avg_customer_rating": round(avg_rating, 2),
-            "total_feedbacks": len(feedbacks.data),
-        },
-    })
+    return APIResponse(
+        data={
+            "rag_loop": {
+                "total_cases": cases.count or 0,
+                "description": "유사 사례 검색용 벡터 DB",
+            },
+            "lora_loop": {
+                "training_queue_pending": training_pending.count or 0,
+                "active_models": len(active_models.data),
+                "models": active_models.data,
+                "description": "시공 사진 → LoRA 재학습",
+            },
+            "price_loop": {
+                "calibrated_categories": len(calibrations.data),
+                "calibrations": [
+                    {
+                        "category": c["category"],
+                        "factor": c["correction_factor"],
+                        "samples": c["sample_count"],
+                    }
+                    for c in calibrations.data
+                ],
+                "description": "실거래 기반 가격 보정",
+            },
+            "constraint_loop": {
+                "applied": len(applied_constraints),
+                "proposed": len(proposed_constraints),
+                "total": constraints.count or 0,
+                "description": "A/S 패턴 → 설계 제약조건",
+            },
+            "overall": {
+                "avg_customer_rating": round(avg_rating, 2),
+                "total_feedbacks": len(feedbacks.data),
+            },
+        }
+    )

@@ -77,7 +77,7 @@ async def _call_claude_vision(
     if text_content.startswith("```"):
         # Remove markdown code block wrapper
         lines = text_content.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         text_content = "\n".join(lines)
 
     return json.loads(text_content)
@@ -130,10 +130,12 @@ async def analyze_space(args: dict) -> dict:
 
     if not image_b64:
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({"error": "Either image_b64 or image_url is required"}),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps({"error": "Either image_b64 or image_url is required"}),
+                }
+            ]
         }
 
     # Build analysis prompt with category context
@@ -149,20 +151,26 @@ async def analyze_space(args: dict) -> dict:
     except json.JSONDecodeError:
         # If JSON parsing fails, return raw analysis with error flag
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "error": "Failed to parse structured analysis. Retry with clearer photo.",
-                    "confidence": "low",
-                }),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "error": "Failed to parse structured analysis. Retry with clearer photo.",
+                            "confidence": "low",
+                        }
+                    ),
+                }
+            ]
         }
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps(result, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(result, ensure_ascii=False),
+            }
+        ]
     }
 
 
@@ -197,10 +205,12 @@ async def analyze_space_quick(args: dict) -> dict:
 
     if not image_b64:
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({"error": "Either image_b64 or image_url is required"}),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps({"error": "Either image_b64 or image_url is required"}),
+                }
+            ]
         }
 
     quick_prompt = """Analyze this Korean apartment photo quickly.
@@ -221,17 +231,21 @@ Output ONLY valid JSON, no extra text."""
         result = await _call_claude_vision(image_b64, quick_prompt, media_type)
     except json.JSONDecodeError:
         return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({"error": "Analysis failed", "confidence": "low"}),
-            }]
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps({"error": "Analysis failed", "confidence": "low"}),
+                }
+            ]
         }
 
     return {
-        "content": [{
-            "type": "text",
-            "text": json.dumps(result, ensure_ascii=False),
-        }]
+        "content": [
+            {
+                "type": "text",
+                "text": json.dumps(result, ensure_ascii=False),
+            }
+        ]
     }
 
 

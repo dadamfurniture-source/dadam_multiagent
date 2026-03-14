@@ -6,27 +6,26 @@ AI harmonization adds photorealistic textures in post-processing.
 
 import bpy
 
-
 # Style material definitions
 # Each style maps component names to (R, G, B) tuples and roughness
 STYLE_MATERIALS = {
     "modern": {
-        "door": (0.95, 0.95, 0.95),          # white
-        "body": (0.90, 0.90, 0.88),           # off-white
-        "countertop": (0.85, 0.85, 0.85),     # light gray
-        "handle": (0.15, 0.15, 0.15),         # dark nickel
-        "toe_kick": (0.12, 0.12, 0.12),       # near black
-        "sink_basin": (0.75, 0.77, 0.78),     # stainless steel
-        "faucet": (0.78, 0.80, 0.82),         # chrome
+        "door": (0.95, 0.95, 0.95),  # white
+        "body": (0.90, 0.90, 0.88),  # off-white
+        "countertop": (0.85, 0.85, 0.85),  # light gray
+        "handle": (0.15, 0.15, 0.15),  # dark nickel
+        "toe_kick": (0.12, 0.12, 0.12),  # near black
+        "sink_basin": (0.75, 0.77, 0.78),  # stainless steel
+        "faucet": (0.78, 0.80, 0.82),  # chrome
         "cooktop_glass": (0.05, 0.05, 0.05),  # black glass
-        "burner_ring": (0.3, 0.3, 0.3),       # dark gray
+        "burner_ring": (0.3, 0.3, 0.3),  # dark gray
         "roughness": 0.3,
     },
     "nordic": {
-        "door": (0.85, 0.78, 0.65),           # light oak
+        "door": (0.85, 0.78, 0.65),  # light oak
         "body": (0.80, 0.73, 0.60),
-        "countertop": (0.90, 0.88, 0.85),     # light marble
-        "handle": (0.70, 0.70, 0.72),         # brushed silver
+        "countertop": (0.90, 0.88, 0.85),  # light marble
+        "handle": (0.70, 0.70, 0.72),  # brushed silver
         "toe_kick": (0.15, 0.15, 0.15),
         "sink_basin": (0.75, 0.77, 0.78),
         "faucet": (0.78, 0.80, 0.82),
@@ -35,22 +34,22 @@ STYLE_MATERIALS = {
         "roughness": 0.6,
     },
     "classic": {
-        "door": (0.55, 0.38, 0.22),           # warm brown
+        "door": (0.55, 0.38, 0.22),  # warm brown
         "body": (0.50, 0.35, 0.20),
-        "countertop": (0.82, 0.75, 0.68),     # warm marble
-        "handle": (0.72, 0.53, 0.04),         # brass
+        "countertop": (0.82, 0.75, 0.68),  # warm marble
+        "handle": (0.72, 0.53, 0.04),  # brass
         "toe_kick": (0.20, 0.14, 0.08),
         "sink_basin": (0.75, 0.77, 0.78),
-        "faucet": (0.72, 0.53, 0.04),         # brass faucet
+        "faucet": (0.72, 0.53, 0.04),  # brass faucet
         "cooktop_glass": (0.05, 0.05, 0.05),
         "burner_ring": (0.3, 0.3, 0.3),
         "roughness": 0.5,
     },
     "natural": {
-        "door": (0.70, 0.58, 0.42),           # natural wood
+        "door": (0.70, 0.58, 0.42),  # natural wood
         "body": (0.65, 0.54, 0.38),
-        "countertop": (0.60, 0.55, 0.48),     # butcher block
-        "handle": (0.40, 0.35, 0.30),         # dark bronze
+        "countertop": (0.60, 0.55, 0.48),  # butcher block
+        "handle": (0.40, 0.35, 0.30),  # dark bronze
         "toe_kick": (0.18, 0.15, 0.12),
         "sink_basin": (0.75, 0.77, 0.78),
         "faucet": (0.40, 0.38, 0.35),
@@ -59,25 +58,25 @@ STYLE_MATERIALS = {
         "roughness": 0.7,
     },
     "industrial": {
-        "door": (0.18, 0.18, 0.18),           # charcoal
+        "door": (0.18, 0.18, 0.18),  # charcoal
         "body": (0.20, 0.20, 0.20),
-        "countertop": (0.30, 0.30, 0.30),     # dark concrete
-        "handle": (0.10, 0.10, 0.10),         # matte black
+        "countertop": (0.30, 0.30, 0.30),  # dark concrete
+        "handle": (0.10, 0.10, 0.10),  # matte black
         "toe_kick": (0.08, 0.08, 0.08),
         "sink_basin": (0.70, 0.72, 0.73),
-        "faucet": (0.10, 0.10, 0.10),         # matte black
+        "faucet": (0.10, 0.10, 0.10),  # matte black
         "cooktop_glass": (0.03, 0.03, 0.03),
         "burner_ring": (0.25, 0.25, 0.25),
         "roughness": 0.8,
     },
     "luxury": {
-        "door": (0.95, 0.93, 0.88),           # pearl white / champagne
+        "door": (0.95, 0.93, 0.88),  # pearl white / champagne
         "body": (0.90, 0.88, 0.83),
-        "countertop": (0.92, 0.90, 0.88),     # calacatta marble
-        "handle": (0.83, 0.69, 0.22),         # gold
+        "countertop": (0.92, 0.90, 0.88),  # calacatta marble
+        "handle": (0.83, 0.69, 0.22),  # gold
         "toe_kick": (0.15, 0.13, 0.10),
         "sink_basin": (0.80, 0.82, 0.83),
-        "faucet": (0.83, 0.69, 0.22),         # gold faucet
+        "faucet": (0.83, 0.69, 0.22),  # gold faucet
         "cooktop_glass": (0.05, 0.05, 0.05),
         "burner_ring": (0.3, 0.3, 0.3),
         "roughness": 0.15,  # high gloss

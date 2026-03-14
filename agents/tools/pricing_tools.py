@@ -1,10 +1,8 @@
 """가격/견적 MCP 도구"""
 
 import json
-import os
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
-from supabase import create_client
 
 # 기본 단가표 (DB에서 관리 예정)
 BASE_PRICES = {
@@ -146,8 +144,7 @@ async def get_prices(args: dict) -> dict:
     # 상판
     if args.get("countertop_material") and args.get("countertop_area_m2"):
         ct_price = (
-            COUNTERTOP_PRICES.get(args["countertop_material"], 200_000)
-            * args["countertop_area_m2"]
+            COUNTERTOP_PRICES.get(args["countertop_material"], 200_000) * args["countertop_area_m2"]
         )
         total += int(ct_price)
         items.append(
@@ -161,9 +158,7 @@ async def get_prices(args: dict) -> dict:
         "content": [
             {
                 "type": "text",
-                "text": json.dumps(
-                    {"items": items, "subtotal": total}, ensure_ascii=False
-                ),
+                "text": json.dumps({"items": items, "subtotal": total}, ensure_ascii=False),
             }
         ]
     }
@@ -217,13 +212,13 @@ async def get_materials(args: dict) -> dict:
     # 기본 자재 구성 (추후 DB화)
     width = args["width_mm"]
     materials = [
-        {"name": "본체 측판 (18T PB)", "spec": f"580x850mm", "qty": 2},
+        {"name": "본체 측판 (18T PB)", "spec": "580x850mm", "qty": 2},
         {"name": "본체 상판 (18T PB)", "spec": f"{width}x580mm", "qty": 1},
         {"name": "본체 하판 (18T PB)", "spec": f"{width}x580mm", "qty": 1},
         {"name": "뒷판 (9T MDF)", "spec": f"{width}x850mm", "qty": 1},
         {"name": f"도어 ({args.get('door_type', 'wrapping')})", "spec": f"{width}x720mm", "qty": 1},
         {"name": "경첩", "spec": "35mm 풀커버", "qty": 2},
-        {"name": "선반", "spec": f"{width-36}x550mm", "qty": 1},
+        {"name": "선반", "spec": f"{width - 36}x550mm", "qty": 1},
     ]
     return {"content": [{"type": "text", "text": json.dumps(materials, ensure_ascii=False)}]}
 

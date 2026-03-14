@@ -3,7 +3,7 @@
 import time
 from collections import defaultdict
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -40,14 +40,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
 
     async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint,
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
     ) -> Response:
         # Health check 등은 제한 없이 통과
         if request.url.path in ("/health", "/"):
             return await call_next(request)
 
         client_ip = self._get_client_ip(request)
-        path_prefix = request.url.path.rsplit("/", 1)[0] if "/api/v1" in request.url.path else request.url.path
+        path_prefix = (
+            request.url.path.rsplit("/", 1)[0]
+            if "/api/v1" in request.url.path
+            else request.url.path
+        )
         bucket_key = f"{client_ip}:{path_prefix}"
         limit = self._get_limit(request.url.path)
 

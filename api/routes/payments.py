@@ -54,12 +54,14 @@ async def get_subscription(
     )
 
     if not sub.data:
-        return APIResponse(data={
-            "plan": "free",
-            "status": "active",
-            "stripe_customer_id": None,
-            "current_period_end": None,
-        })
+        return APIResponse(
+            data={
+                "plan": "free",
+                "status": "active",
+                "stripe_customer_id": None,
+                "current_period_end": None,
+            }
+        )
 
     return APIResponse(data=sub.data[0])
 
@@ -90,7 +92,11 @@ async def create_checkout_session(
         .limit(1)
         .execute()
     )
-    customer_id = sub.data[0]["stripe_customer_id"] if sub.data and sub.data[0].get("stripe_customer_id") else None
+    customer_id = (
+        sub.data[0]["stripe_customer_id"]
+        if sub.data and sub.data[0].get("stripe_customer_id")
+        else None
+    )
 
     session_params = {
         "mode": "subscription",
@@ -165,13 +171,17 @@ async def change_plan(
         logger.error(f"Stripe plan change error: {e}")
         raise HTTPException(500, "플랜 변경에 실패했습니다.")
 
-    client.table("subscriptions").update({
-        "plan": body.plan,
-    }).eq("id", sub.data[0]["id"]).execute()
+    client.table("subscriptions").update(
+        {
+            "plan": body.plan,
+        }
+    ).eq("id", sub.data[0]["id"]).execute()
 
-    client.table("profiles").update({
-        "plan": body.plan,
-    }).eq("id", user.id).execute()
+    client.table("profiles").update(
+        {
+            "plan": body.plan,
+        }
+    ).eq("id", user.id).execute()
 
     return APIResponse(
         message=f"플랜이 {body.plan}으로 변경되었습니다.",
@@ -211,10 +221,12 @@ async def cancel_subscription(
         logger.error(f"Stripe cancel error: {e}")
         raise HTTPException(500, "구독 취소에 실패했습니다.")
 
-    client.table("subscriptions").update({
-        "status": "cancelled",
-        "cancel_at": sub.data[0].get("current_period_end"),
-    }).eq("id", sub.data[0]["id"]).execute()
+    client.table("subscriptions").update(
+        {
+            "status": "cancelled",
+            "cancel_at": sub.data[0].get("current_period_end"),
+        }
+    ).eq("id", sub.data[0]["id"]).execute()
 
     return APIResponse(message="구독이 현재 기간 종료 후 취소됩니다.")
 
@@ -321,7 +333,9 @@ def _handle_subscription_updated(client, subscription):
         return
 
     update_data = {
-        "status": "active" if status == "active" else ("past_due" if status == "past_due" else "cancelled"),
+        "status": "active"
+        if status == "active"
+        else ("past_due" if status == "past_due" else "cancelled"),
         "current_period_start": _ts_to_iso(subscription.get("current_period_start")),
         "current_period_end": _ts_to_iso(subscription.get("current_period_end")),
     }
@@ -346,10 +360,12 @@ def _handle_subscription_deleted(client, subscription):
     )
 
     if sub.data:
-        client.table("subscriptions").update({
-            "status": "cancelled",
-            "plan": "free",
-        }).eq("id", sub.data[0]["id"]).execute()
+        client.table("subscriptions").update(
+            {
+                "status": "cancelled",
+                "plan": "free",
+            }
+        ).eq("id", sub.data[0]["id"]).execute()
 
         client.table("profiles").update({"plan": "free"}).eq("id", sub.data[0]["user_id"]).execute()
         logger.info(f"Subscription deleted: user={sub.data[0]['user_id']} → free")
@@ -370,7 +386,9 @@ def _handle_payment_failed(client, invoice):
     )
 
     if sub.data:
-        client.table("subscriptions").update({"status": "past_due"}).eq("id", sub.data[0]["id"]).execute()
+        client.table("subscriptions").update({"status": "past_due"}).eq(
+            "id", sub.data[0]["id"]
+        ).execute()
 
 
 def _ts_to_iso(ts) -> str | None:
@@ -378,4 +396,5 @@ def _ts_to_iso(ts) -> str | None:
     if ts is None:
         return None
     from datetime import datetime, timezone
+
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()

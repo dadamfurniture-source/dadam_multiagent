@@ -20,11 +20,15 @@ async def _fire_ops_event(event_type: str, order_id: str, data: dict | None = No
     """운영 에이전트 이벤트를 백그라운드에서 실행 (실패해도 API 응답에 영향 없음)"""
     try:
         from agents.operations.orchestrator import OrderEvent, handle_operations_event
-        event = OrderEvent(event_type=event_type, order_id=order_id, data=data, triggered_by="system")
+
+        event = OrderEvent(
+            event_type=event_type, order_id=order_id, data=data, triggered_by="system"
+        )
         async for _ in handle_operations_event(event):
             pass  # consume generator
     except Exception as e:
         logger.warning(f"Operations event failed: {event_type} / {order_id} / {e}")
+
 
 # Valid status transitions (from → [allowed to states])
 VALID_TRANSITIONS = {
@@ -88,25 +92,29 @@ async def create_order(
 
     order = (
         client.table("orders")
-        .insert({
-            "project_id": body.project_id,
-            "customer_id": user.id,
-            "quote_id": body.quote_id,
-            "contract_amount": quote.data["total_price"],
-            "delivery_address": body.delivery_address,
-            "notes": body.notes,
-            "status": "consulting",
-        })
+        .insert(
+            {
+                "project_id": body.project_id,
+                "customer_id": user.id,
+                "quote_id": body.quote_id,
+                "contract_amount": quote.data["total_price"],
+                "delivery_address": body.delivery_address,
+                "notes": body.notes,
+                "status": "consulting",
+            }
+        )
         .execute()
     )
 
     # 상태 이력 기록
-    client.table("order_status_history").insert({
-        "order_id": order.data[0]["id"],
-        "to_status": "consulting",
-        "changed_by": user.id,
-        "reason": "주문 생성",
-    }).execute()
+    client.table("order_status_history").insert(
+        {
+            "order_id": order.data[0]["id"],
+            "to_status": "consulting",
+            "changed_by": user.id,
+            "reason": "주문 생성",
+        }
+    ).execute()
 
     return APIResponse(
         message="주문이 생성되었습니다.",
@@ -186,10 +194,7 @@ async def get_order(
     )
 
     as_tickets = (
-        client.table("after_service_tickets")
-        .select("*")
-        .eq("order_id", order_id)
-        .execute()
+        client.table("after_service_tickets").select("*").eq("order_id", order_id).execute()
     )
 
     return APIResponse(
@@ -241,20 +246,24 @@ async def get_order_timeline(
     # 통합 타임라인
     timeline = []
     for h in history.data:
-        timeline.append({
-            "type": "status_change",
-            "status": h["to_status"],
-            "reason": h.get("reason"),
-            "at": h["created_at"],
-        })
+        timeline.append(
+            {
+                "type": "status_change",
+                "status": h["to_status"],
+                "reason": h.get("reason"),
+                "at": h["created_at"],
+            }
+        )
     for s in schedules.data:
-        timeline.append({
-            "type": "schedule",
-            "schedule_type": s["type"],
-            "title": s["title"],
-            "status": s["status"],
-            "at": s["scheduled_at"],
-        })
+        timeline.append(
+            {
+                "type": "schedule",
+                "schedule_type": s["type"],
+                "title": s["title"],
+                "status": s["status"],
+                "at": s["scheduled_at"],
+            }
+        )
 
     timeline.sort(key=lambda x: x["at"])
 
@@ -297,16 +306,20 @@ async def update_order_status(
     client.table("orders").update({"status": body.status}).eq("id", order_id).execute()
 
     # 이력 기록
-    client.table("order_status_history").insert({
-        "order_id": order_id,
-        "from_status": current,
-        "to_status": body.status,
-        "changed_by": user.id,
-        "reason": body.reason,
-    }).execute()
+    client.table("order_status_history").insert(
+        {
+            "order_id": order_id,
+            "from_status": current,
+            "to_status": body.status,
+            "changed_by": user.id,
+            "reason": body.reason,
+        }
+    ).execute()
 
     # 운영 에이전트 트리거 (비동기)
-    background.add_task(_fire_ops_event, f"status_change:{body.status}", order_id, {"status": body.status})
+    background.add_task(
+        _fire_ops_event, f"status_change:{body.status}", order_id, {"status": body.status}
+    )
 
     return APIResponse(
         message=f"상태가 '{body.status}'로 변경되었습니다.",
@@ -345,14 +358,16 @@ async def record_payment(
     # 매출 전표 생성 (revenue_entries)
     payment = (
         client.table("revenue_entries")
-        .insert({
-            "order_id": order_id,
-            "category": body.payment_type,
-            "amount": body.amount,
-            "status": "collected",
-            "payment_method": body.payment_method,
-            "notes": body.notes,
-        })
+        .insert(
+            {
+                "order_id": order_id,
+                "category": body.payment_type,
+                "amount": body.amount,
+                "status": "collected",
+                "payment_method": body.payment_method,
+                "notes": body.notes,
+            }
+        )
         .execute()
     )
 
@@ -360,13 +375,15 @@ async def record_payment(
     status_changed = False
     if stage["to"] and order.data["status"] == stage["from"]:
         client.table("orders").update({"status": stage["to"]}).eq("id", order_id).execute()
-        client.table("order_status_history").insert({
-            "order_id": order_id,
-            "from_status": stage["from"],
-            "to_status": stage["to"],
-            "changed_by": "system",
-            "reason": f"{body.payment_type} 결제에 의한 자동 전이",
-        }).execute()
+        client.table("order_status_history").insert(
+            {
+                "order_id": order_id,
+                "from_status": stage["from"],
+                "to_status": stage["to"],
+                "changed_by": "system",
+                "reason": f"{body.payment_type} 결제에 의한 자동 전이",
+            }
+        ).execute()
         status_changed = True
 
     # 운영 에이전트 트리거 (비동기)
@@ -417,19 +434,26 @@ async def create_as_ticket(
 
     ticket = (
         client.table("after_service_tickets")
-        .insert({
-            "order_id": order_id,
-            "customer_id": user.id,
-            "type": body.type,
-            "description": body.description,
-            "photos": body.photos,
-            "status": "received",
-        })
+        .insert(
+            {
+                "order_id": order_id,
+                "customer_id": user.id,
+                "type": body.type,
+                "description": body.description,
+                "photos": body.photos,
+                "status": "received",
+            }
+        )
         .execute()
     )
 
     # 운영 에이전트 트리거 (비동기)
-    background.add_task(_fire_ops_event, "as_request", order_id, {"type": body.type, "description": body.description})
+    background.add_task(
+        _fire_ops_event,
+        "as_request",
+        order_id,
+        {"type": body.type, "description": body.description},
+    )
 
     return APIResponse(
         message="A/S가 접수되었습니다.",
@@ -441,8 +465,12 @@ async def create_as_ticket(
 
 
 ALLOWED_EVENT_TYPES = {
-    "status_check", "schedule_update", "payment_summary",
-    "as_status", "manufacturing_status", "installation_status",
+    "status_check",
+    "schedule_update",
+    "payment_summary",
+    "as_status",
+    "manufacturing_status",
+    "installation_status",
 }
 
 
@@ -454,7 +482,9 @@ async def ops_event_stream(
 ):
     """운영 에이전트 처리 결과를 SSE로 스트리밍"""
     if event_type not in ALLOWED_EVENT_TYPES:
-        raise HTTPException(400, f"허용되지 않은 이벤트 유형입니다. 가능: {sorted(ALLOWED_EVENT_TYPES)}")
+        raise HTTPException(
+            400, f"허용되지 않은 이벤트 유형입니다. 가능: {sorted(ALLOWED_EVENT_TYPES)}"
+        )
 
     from agents.operations.orchestrator import OrderEvent, handle_operations_event
 
@@ -482,7 +512,7 @@ async def ops_event_stream(
     async def generate():
         async for msg in handle_operations_event(event):
             yield f"data: {json_mod.dumps(msg, ensure_ascii=False)}\n\n"
-        yield "data: {\"type\": \"done\"}\n\n"
+        yield 'data: {"type": "done"}\n\n'
 
     return StreamingResponse(
         generate(),

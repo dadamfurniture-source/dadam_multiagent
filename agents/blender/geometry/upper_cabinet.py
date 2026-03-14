@@ -7,8 +7,9 @@ Standard Korean kitchen upper cabinet:
 - Backsplash gap: 500mm above countertop
 """
 
-import bpy
 import math
+
+import bpy
 
 
 def _add_box(name, width, height, depth, location=(0, 0, 0)):
@@ -84,8 +85,10 @@ def create_upper_cabinet(
     body.parent = parent
 
     # Side panels
-    for side, sx in [("L", position_x + panel_thickness / 2),
-                     ("R", position_x + width - panel_thickness / 2)]:
+    for side, sx in [
+        ("L", position_x + panel_thickness / 2),
+        ("R", position_x + width - panel_thickness / 2),
+    ]:
         panel = _add_box(
             f"USidePanel_{side}_{position_x}",
             panel_thickness,
@@ -133,9 +136,7 @@ def create_upper_cabinet(
 
             offset_x = pivot_x - dx
             door.location.x = pivot_x
-            door.data.transform(
-                __import__("mathutils").Matrix.Translation((-offset_x, 0, 0))
-            )
+            door.data.transform(__import__("mathutils").Matrix.Translation((-offset_x, 0, 0)))
 
     # Shelves (visible when open)
     if door_state == "open":

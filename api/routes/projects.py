@@ -6,7 +6,15 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 
 from api.middleware.auth import CurrentUser, get_current_user
@@ -34,7 +42,9 @@ async def create_project(
 
     # 카테고리 검증
     if category not in CATEGORIES:
-        raise HTTPException(400, f"지원하지 않는 카테고리: {category}. 가능: {list(CATEGORIES.keys())}")
+        raise HTTPException(
+            400, f"지원하지 않는 카테고리: {category}. 가능: {list(CATEGORIES.keys())}"
+        )
 
     if style and style not in STYLES:
         raise HTTPException(400, f"지원하지 않는 스타일: {style}. 가능: {STYLES}")
@@ -56,8 +66,7 @@ async def create_project(
         if (count_result.count or 0) >= limit:
             raise HTTPException(
                 429,
-                f"월 {limit}회 시뮬레이션 한도에 도달했습니다. "
-                f"플랜을 업그레이드하세요.",
+                f"월 {limit}회 시뮬레이션 한도에 도달했습니다. 플랜을 업그레이드하세요.",
             )
 
     # 이미지 업로드 (10MB 제한)
@@ -65,7 +74,9 @@ async def create_project(
     project_id = str(uuid.uuid4())
     image_content = await image.read()
     if len(image_content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(413, f"이미지 크기가 {MAX_UPLOAD_SIZE // (1024*1024)}MB를 초과합니다.")
+        raise HTTPException(
+            413, f"이미지 크기가 {MAX_UPLOAD_SIZE // (1024 * 1024)}MB를 초과합니다."
+        )
     ext = (image.filename or "upload.jpg").rsplit(".", 1)[-1]
     image_path = f"{user.id}/{project_id}/original.{ext}"
 
@@ -77,27 +88,31 @@ async def create_project(
     image_url = client.storage.from_("originals").get_public_url(image_path)
 
     # 프로젝트 레코드 생성
-    project = (
+    (
         client.table("projects")
-        .insert({
-            "id": project_id,
-            "user_id": user.id,
-            "name": f"{CATEGORIES[category]} 시뮬레이션",
-            "status": "created",
-            "category": category,
-            "style": style,
-            "budget": budget,
-            "notes": notes,
-        })
+        .insert(
+            {
+                "id": project_id,
+                "user_id": user.id,
+                "name": f"{CATEGORIES[category]} 시뮬레이션",
+                "status": "created",
+                "category": category,
+                "style": style,
+                "budget": budget,
+                "notes": notes,
+            }
+        )
         .execute()
     )
 
     # 원본 이미지 기록
-    client.table("generated_images").insert({
-        "project_id": project_id,
-        "image_url": image_url,
-        "type": "original",
-    }).execute()
+    client.table("generated_images").insert(
+        {
+            "project_id": project_id,
+            "image_url": image_url,
+            "type": "original",
+        }
+    ).execute()
 
     return APIResponse(
         message="프로젝트가 생성되었습니다.",
@@ -163,9 +178,30 @@ async def get_project(
 
     # 관련 데이터 병렬 조회
     images = client.table("generated_images").select("*").eq("project_id", project_id).execute()
-    layouts = client.table("layouts").select("*").eq("project_id", project_id).order("created_at", desc=True).limit(1).execute()
-    quotes = client.table("quotes").select("*").eq("project_id", project_id).order("created_at", desc=True).limit(1).execute()
-    analyses = client.table("space_analyses").select("*").eq("project_id", project_id).order("created_at", desc=True).limit(1).execute()
+    layouts = (
+        client.table("layouts")
+        .select("*")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    quotes = (
+        client.table("quotes")
+        .select("*")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    analyses = (
+        client.table("space_analyses")
+        .select("*")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
 
     # originals 버킷(private)의 이미지는 signed URL로 변환
     images_data = images.data or []
@@ -194,14 +230,29 @@ async def get_project(
 
     # Pro+ 에서만 상세설계 포함
     if user.plan in ("pro", "enterprise"):
-        designs = client.table("detail_designs").select("*").eq("project_id", project_id).order("created_at", desc=True).limit(1).execute()
+        designs = (
+            client.table("detail_designs")
+            .select("*")
+            .eq("project_id", project_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
         data["detail_design"] = designs.data[0] if designs.data else None
 
     return APIResponse(data=data)
 
 
-async def _run_pipeline_async(project_id: str, user_id: str, user_plan: str, category: str,
-                              style: str | None, budget: int | None, image_url: str, notes: str | None):
+async def _run_pipeline_async(
+    project_id: str,
+    user_id: str,
+    user_plan: str,
+    category: str,
+    style: str | None,
+    budget: int | None,
+    image_url: str,
+    notes: str | None,
+):
     """백그라운드에서 AI 파이프라인을 비동기 실행"""
     from agents.orchestrator import ProjectRequest, process_project
 
@@ -231,22 +282,28 @@ async def _run_pipeline_async(project_id: str, user_id: str, user_plan: str, cat
                     stage = "image_gen"
                 elif "quote" in content or "price" in content:
                     stage = "quote"
-                client.table("projects").update({
-                    "pipeline_stage": stage,
-                }).eq("id", project_id).execute()
+                client.table("projects").update(
+                    {
+                        "pipeline_stage": stage,
+                    }
+                ).eq("id", project_id).execute()
 
-        client.table("projects").update({
-            "status": "completed",
-            "pipeline_stage": "completed",
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("id", project_id).execute()
+        client.table("projects").update(
+            {
+                "status": "completed",
+                "pipeline_stage": "completed",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", project_id).execute()
 
     except Exception as e:
         logger.error("Project %s pipeline failed: %s", project_id, e, exc_info=True)
-        client.table("projects").update({
-            "status": "failed",
-            "pipeline_stage": "failed",
-        }).eq("id", project_id).execute()
+        client.table("projects").update(
+            {
+                "status": "failed",
+                "pipeline_stage": "failed",
+            }
+        ).eq("id", project_id).execute()
 
 
 @router.post("/{project_id}/run", response_model=APIResponse)
@@ -273,10 +330,12 @@ async def run_project(
         raise HTTPException(400, f"현재 상태({project.data['status']})에서는 실행할 수 없습니다.")
 
     # 상태 업데이트
-    client.table("projects").update({
-        "status": "processing",
-        "pipeline_stage": "started",
-    }).eq("id", project_id).execute()
+    client.table("projects").update(
+        {
+            "status": "processing",
+            "pipeline_stage": "started",
+        }
+    ).eq("id", project_id).execute()
 
     # 원본 이미지 URL 조회
     p = project.data
@@ -340,7 +399,9 @@ async def stream_project(
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning("SSE stream: auth exception: %s (token=%s...)", e, token[:20] if token else "None")
+        logger.warning(
+            "SSE stream: auth exception: %s (token=%s...)", e, token[:20] if token else "None"
+        )
         raise HTTPException(401, "인증 실패")
 
     client = get_service_client()
