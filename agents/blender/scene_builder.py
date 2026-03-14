@@ -221,7 +221,7 @@ def build_scene(config):
     # Workbench engine (GPU-free, fast)
     scene.render.engine = "BLENDER_WORKBENCH"
     scene.display.shading.light = "STUDIO"
-    scene.display.shading.studio_light = "studio.exr"
+    scene.display.shading.studio_light = "studio.sl"
     scene.display.shading.color_type = "MATERIAL"
 
     # Transparent background (RGBA output)
