@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
-from agents.tools.compositor_tools import composite_render_onto_photo
+from agents.tools.compositor_tools import generate_closed_door, generate_open_door
 from agents.tools.image_tools import (
     _call_gemini_image,
     _call_replicate_inpaint,
@@ -373,25 +373,26 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender open-door render complete")
 
-            # Generate furniture image: Gemini uses 3D render as layout reference
-            # (no alpha composite — Gemini generates directly from original photo
-            #  with 3D render as guide for exact module positions)
-            furniture_b64 = await composite_render_onto_photo(
-                image_b64,
-                closed_render,
-                style,
-                request.category,
+            # Generate closed-door image: Gemini uses 3D render as layout guide
+            furniture_b64 = await generate_closed_door(
+                original_b64=image_b64,
+                render_b64=closed_render,
+                style=style,
+                category=request.category,
+                placement_note=placement_note,
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
             logger.info("Blender-guided furniture generation complete")
 
-            # Generate open door image with 3D open render as guide
-            open_b64 = await composite_render_onto_photo(
-                image_b64,
-                open_render,
-                style,
-                request.category,
+            # Generate open-door from CLOSED result (ensures same structure)
+            contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
+            open_b64 = await generate_open_door(
+                furniture_b64=furniture_b64,
+                render_b64=open_render,
+                style=style,
+                category=request.category,
+                open_contents=contents,
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, open_b64, "open")

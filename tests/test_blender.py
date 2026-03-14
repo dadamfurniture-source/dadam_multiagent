@@ -165,8 +165,8 @@ async def test_renderer_success_returns_base64():
 
 @pytest.mark.asyncio
 async def test_composite_render_onto_photo_calls_gemini():
-    """composite_render_onto_photo sends render as extra image to Gemini."""
-    from agents.tools.compositor_tools import composite_render_onto_photo
+    """generate_closed_door sends render as extra image to Gemini."""
+    from agents.tools.compositor_tools import generate_closed_door
 
     photo = _make_test_image(200, 150, color=(80, 80, 80))
     render = _make_test_image(200, 150, color=(200, 200, 200))
@@ -175,7 +175,7 @@ async def test_composite_render_onto_photo_calls_gemini():
     mock_gemini = AsyncMock(return_value=result_img)
 
     with patch("agents.tools.compositor_tools._call_gemini_image", mock_gemini):
-        result = await composite_render_onto_photo(
+        result = await generate_closed_door(
             original_b64=photo,
             render_b64=render,
             style="modern",
@@ -193,15 +193,15 @@ async def test_composite_render_onto_photo_calls_gemini():
 
 @pytest.mark.asyncio
 async def test_composite_render_raises_on_gemini_failure():
-    """composite_render_onto_photo propagates error when Gemini fails."""
-    from agents.tools.compositor_tools import composite_render_onto_photo
+    """generate_closed_door propagates error when Gemini fails."""
+    from agents.tools.compositor_tools import generate_closed_door
 
     photo = _make_test_image(200, 150)
     render = _make_test_image(200, 150)
 
     with patch("agents.tools.compositor_tools._call_gemini_image", side_effect=Exception("API down")):
         with pytest.raises(Exception, match="API down"):
-            await composite_render_onto_photo(
+            await generate_closed_door(
                 original_b64=photo,
                 render_b64=render,
                 style="modern",
@@ -211,8 +211,8 @@ async def test_composite_render_raises_on_gemini_failure():
 
 @pytest.mark.asyncio
 async def test_composite_render_with_ref_images():
-    """composite_render_onto_photo includes style refs alongside 3D render."""
-    from agents.tools.compositor_tools import composite_render_onto_photo
+    """generate_closed_door includes style refs alongside 3D render."""
+    from agents.tools.compositor_tools import generate_closed_door
 
     photo = _make_test_image(200, 150)
     render = _make_test_image(200, 150, color=(200, 200, 200))
@@ -222,7 +222,7 @@ async def test_composite_render_with_ref_images():
     mock_gemini = AsyncMock(return_value=result_img)
 
     with patch("agents.tools.compositor_tools._call_gemini_image", mock_gemini):
-        await composite_render_onto_photo(
+        await generate_closed_door(
             original_b64=photo,
             render_b64=render,
             style="nordic",
@@ -394,7 +394,7 @@ def test_orchestrator_imports():
     import importlib
     mod = importlib.import_module("agents.orchestrator")
     assert hasattr(mod, "_fetch_reference_images")
-    assert hasattr(mod, "composite_render_onto_photo")
+    assert hasattr(mod, "generate_closed_door")
     assert hasattr(mod, "process_project")
 
 
