@@ -34,19 +34,7 @@ async def generate_closed_door(
     placement_note: str = "",
     reference_images: list[str] | None = None,
 ) -> str:
-    """Generate closed-door furniture image using 3D render as layout guide.
-
-    Args:
-        original_b64: Original site photo (base64)
-        render_b64: Blender render showing exact cabinet layout (base64)
-        style: Style name
-        category: Furniture category
-        placement_note: Extra placement instructions (sink/cooktop positions)
-        reference_images: Optional style reference images (base64)
-
-    Returns:
-        Photorealistic furniture image as base64 PNG
-    """
+    """Generate closed-door furniture image using 3D render as layout guide."""
     extra = [render_b64]
     if reference_images:
         extra.extend(reference_images[:1])
@@ -54,14 +42,14 @@ async def generate_closed_door(
     style_label = STYLE_SHORT.get(style, "white flat-panel")
 
     prompt = (
-        f"Install {style_label} {category} cabinets in this photo. "
-        f"PRESERVE original wall tiles, backsplash, wall color, camera angle EXACTLY. "
-        f"Only remove clutter/debris from furniture zone. "
-        f"If bare concrete floor: add wood flooring. If ceiling unfinished: patch only exposed parts. "
-        f"The SECOND image shows exact 3D layout — copy module positions, "
-        f"door/drawer placement, sink+faucet EXACTLY. "
-        f"Cooktop: DRAWERS below. {placement_note}"
-        f"Upper flush ceiling. Continuous countertop. Photorealistic."
+        f"Remove ALL people, workers, tools, debris, construction waste from this photo. "
+        f"PRESERVE wall tiles, backsplash, wall color, perspective EXACTLY. "
+        f"Bare concrete floor → add wood flooring. Unfinished ceiling → patch. "
+        f"Install {style_label} {category}: "
+        f"UPPER wall cabinets touching ceiling + LOWER base cabinets + countertop. "
+        f"The 2nd image = 3D layout guide. Copy positions EXACTLY. "
+        f"Cooktop zone: 3-tier DRAWERS below (NOT doors, NOT empty). "
+        f"{placement_note}Photorealistic."
     )
 
     if len(prompt) > 500:
@@ -84,31 +72,19 @@ async def generate_open_door(
 ) -> str:
     """Generate open-door image from the CLOSED furniture result.
 
-    Uses the closed-door result as base (not original photo) so the
-    cabinet structure is identical — only doors swing open.
-
-    Args:
-        furniture_b64: Closed-door furniture image (base64) — used as base
-        render_b64: Blender open-door render (base64) — layout guide
-        style: Style name
-        category: Furniture category
-        open_contents: What's inside the cabinets
-        reference_images: Optional style reference images (base64)
-
-    Returns:
-        Open-door furniture image as base64 PNG
+    Uses the closed-door result as base so cabinet structure is identical.
     """
     extra = [render_b64]
     if reference_images:
         extra.extend(reference_images[:1])
 
     prompt = (
-        f"Open ALL cabinet doors and drawers in this image. "
-        f"The SECOND image shows the exact open layout — match it. "
-        f"Swing doors open 90 degrees. Pull drawers forward. "
-        f"Inside cabinets: {open_contents}. "
-        f"Do NOT change walls, tiles, floor, ceiling, countertop, or perspective. "
-        f"Keep the SAME cabinet structure, only open the doors."
+        f"Edit this EXACT image: open all cabinet doors and pull out all drawers. "
+        f"The 2nd image = 3D open layout guide. Match it. "
+        f"Keep IDENTICAL cabinet structure, style, color, handles, countertop. "
+        f"Upper+lower doors swing 90deg outward. Drawers pulled 40% forward. "
+        f"Inside: {open_contents}. "
+        f"Do NOT change walls, tiles, floor, ceiling, or perspective AT ALL."
     )
 
     if len(prompt) > 500:
@@ -131,6 +107,9 @@ async def composite_render_onto_photo(
 ) -> str:
     """Alias for generate_closed_door (backward compatibility)."""
     return await generate_closed_door(
-        original_b64, render_b64, style, category,
+        original_b64,
+        render_b64,
+        style,
+        category,
         reference_images=reference_images,
     )
