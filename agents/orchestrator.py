@@ -13,10 +13,9 @@ from typing import AsyncGenerator
 from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
 from agents.tools.compositor_tools import generate_closed_door, generate_open_door
 from agents.tools.image_tools import (
-    _call_flux_canny_pro,
     _call_gemini_image,
+    _call_gemini_vision,
     _call_replicate_inpaint,
-    _composite_inpaint_result,
     _create_furniture_mask,
     cleanup_photo,
 )
@@ -24,7 +23,7 @@ from agents.tools.pricing_tools import (
     _merge_layout_and_vision,
     calculate_quote,
 )
-from agents.tools.vision_tools import _call_claude_vision, analyze_generated_image
+from agents.prompts import FURNITURE_ANALYSIS_PROMPT
 from shared.constants import CATEGORIES_EN
 from shared.supabase_client import get_service_client
 
@@ -244,7 +243,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             f"Category: {request.category}\n"
             f"Analyze this photo and return the JSON output as specified above."
         )
-        space_result = await _call_claude_vision(image_b64, analysis_prompt, media_type)
+        space_result = await _call_gemini_vision(image_b64, analysis_prompt, media_type)
         logger.info(
             "Space analysis complete: %s", json.dumps(space_result, ensure_ascii=False)[:200]
         )
@@ -394,27 +393,6 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     if ref_images:
         logger.info("Found %d reference images for %s/%s", len(ref_images), request.category, style)
 
-    # ── FLUX 프롬프트 (Blender/Gemini 공통) ──
-    style_label = {
-        "modern": "white flat-panel",
-        "nordic": "light wood grain",
-        "classic": "warm brown wood panel",
-        "natural": "natural wood matte",
-        "industrial": "dark charcoal matte",
-        "luxury": "high-gloss pearl white",
-    }.get(style, "white flat-panel")
-
-    flux_prompt = (
-        f"Photorealistic Korean apartment kitchen interior. "
-        f"{style_label} cabinets. "
-        f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
-        f"Lower cabinet layout: {module_desc} "
-        f"{placement_note}"
-        f"Stainless steel sink bowl with faucet. "
-        f"Red/burgundy wall tiles as backsplash. "
-        f"Clean bare floor. Natural interior lighting."
-    )
-
     # ── 3a. Blender 3D Rendering Pipeline ──
     use_blender = os.environ.get("USE_BLENDER", "true").lower() == "true"
     camera_params = space_result.get("camera_params", {})
@@ -443,50 +421,33 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender open-door render complete")
 
-            # ── FLUX Canny-Pro 하이브리드: 구조 강제 생성 ──
-            try:
-                # Step 1: 원본에서 사람/잡동사니 제거 (합성 base)
-                clean_b64 = await cleanup_photo(image_b64)
-                logger.info("Cleanup complete (people/debris removed)")
+            # ── Blender + Gemini compositor ──
+            furniture_b64 = await generate_closed_door(
+                original_b64=image_b64,
+                render_b64=closed_render,
+                style=style,
+                category=request.category,
+                placement_note=placement_note,
+                reference_images=ref_images,
+                wall_width=wall_width,
+                module_count=len(_modules),
+                module_desc=module_desc,
+            )
+            logger.info("Blender-guided furniture generation complete")
 
-                # Step 2: FLUX Canny-Pro — Blender 렌더의 엣지를 구조로 강제
-                flux_result = await _call_flux_canny_pro(
-                    prompt=flux_prompt,
-                    control_image_b64=closed_render,
-                    guidance=30,
-                    steps=28,
-                )
-                logger.info("FLUX Canny-Pro generation complete")
-
-                # Step 3: clean 원본 위에 합성 — 마스크 밖 = 깨끗한 원본 픽셀
-                mask_b64 = _create_furniture_mask(
-                    clean_b64, request.category, space_result
-                )
-                furniture_b64 = _composite_inpaint_result(
-                    clean_b64, flux_result, mask_b64
-                )
-                logger.info("FLUX result composited onto clean base")
-
-            except Exception as flux_err:
-                logger.warning(
-                    "FLUX Canny-Pro failed: %s, falling back to Gemini compositor", flux_err
-                )
-                # 폴백: 기존 Gemini compositor 경로
-                furniture_b64 = await generate_closed_door(
-                    original_b64=image_b64,
-                    render_b64=closed_render,
-                    style=style,
-                    category=request.category,
-                    placement_note=placement_note,
-                    reference_images=ref_images,
-                    wall_width=wall_width,
-                    module_count=len(_modules),
-                    module_desc=module_desc,
-                )
+            # Pass 2: 보정 (쿡탑 서랍 + 바닥 잔해)
+            if request.category == "sink":
+                try:
+                    furniture_b64 = await _correction_pass(
+                        furniture_b64, request.category
+                    )
+                    logger.info("Correction pass complete")
+                except Exception as e2:
+                    logger.warning("Correction pass failed: %s", e2)
 
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
 
-            # Generate open-door from CLOSED result (ensures same structure)
+            # Generate open-door from CLOSED result
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
             open_b64 = await generate_open_door(
                 furniture_b64=furniture_b64,
@@ -497,7 +458,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
-            logger.info("Blender+FLUX hybrid pipeline complete")
+            logger.info("Blender+Gemini pipeline complete")
 
         except Exception as e:
             logger.warning("Blender pipeline failed: %s, falling back to Gemini-only", e)
@@ -540,46 +501,20 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         )
 
         try:
-            # Step 1: Cleanup
-            clean_b64 = await cleanup_photo(image_b64)
-            logger.info("Cleanup complete")
-
-            # Step 2: 구조 스케치 생성 (서랍이 명확한 레이아웃)
-            structure_prompt = (
-                f"Generate a clean 3D rendering front view of a white kitchen cabinet layout. "
-                f"White background. Simple flat shading. NO text, NO labels, NO dimensions. "
-                f"Lower cabinet layout left to right: {module_desc} "
-                f"Cooktop area MUST show exactly 2 HORIZONTAL DRAWERS with handle bars. "
-                f"Upper cabinets above all base cabinets. Continuous countertop. "
-                f"Clean minimal 3D render, absolutely NO text anywhere."
+            furniture_b64 = await _call_gemini_image(
+                furniture_prompt, image_b64, extra_images=ref_images or None
             )
-            structure_b64 = await _call_gemini_image(structure_prompt)
-            logger.info("Structure sketch generated")
+            logger.info("Furniture generated via Gemini (pass 1)")
 
-            # Step 3: FLUX Canny-Pro — 구조 스케치로 구조 강제
-            try:
-                flux_result = await _call_flux_canny_pro(
-                    prompt=flux_prompt,
-                    control_image_b64=structure_b64,
-                    guidance=30,
-                    steps=28,
-                )
-                logger.info("FLUX Canny-Pro generation complete")
-
-                # Step 4: clean 원본 위에 합성
-                mask_b64 = _create_furniture_mask(
-                    clean_b64, request.category, space_result
-                )
-                furniture_b64 = _composite_inpaint_result(
-                    clean_b64, flux_result, mask_b64
-                )
-                logger.info("FLUX result composited onto clean base")
-
-            except Exception as flux_err:
-                logger.warning("FLUX failed: %s, using Gemini direct", flux_err)
-                furniture_b64 = await _call_gemini_image(
-                    furniture_prompt, clean_b64, extra_images=ref_images or None
-                )
+            # Pass 2: 보정 (쿡탑 서랍 + 바닥 잔해)
+            if request.category == "sink":
+                try:
+                    furniture_b64 = await _correction_pass(
+                        furniture_b64, request.category
+                    )
+                    logger.info("Correction pass complete (pass 2)")
+                except Exception as e2:
+                    logger.warning("Correction pass failed: %s", e2)
 
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
             logger.info("Furniture image uploaded")
@@ -638,12 +573,13 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     _update_stage(request.project_id, "quote")
 
     try:
-        # 4-1. Claude Vision으로 생성 이미지 분석 (furniture_b64가 있는 경우)
+        # 4-1. Gemini Vision으로 생성 이미지 분석 (furniture_b64가 있는 경우)
         image_analysis = None
         if furniture_b64:
             try:
-                image_analysis = await analyze_generated_image(
-                    furniture_b64, request.category
+                analysis_prompt = f"{FURNITURE_ANALYSIS_PROMPT}\n\nCategory: {request.category}"
+                image_analysis = await _call_gemini_vision(
+                    furniture_b64, analysis_prompt
                 )
                 logger.info("Image analysis: %s", json.dumps(image_analysis, ensure_ascii=False)[:200])
             except Exception as e:

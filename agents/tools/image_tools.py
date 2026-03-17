@@ -98,6 +98,58 @@ async def _call_gemini_image(
     raise ValueError("No image in Gemini response")
 
 
+async def _call_gemini_vision(
+    image_b64: str,
+    prompt: str,
+    media_type: str = "image/jpeg",
+) -> dict:
+    """Gemini Vision API — 이미지 분석 후 JSON 반환 (Claude Vision 대체).
+
+    텍스트만 반환하도록 설정하여 이미지 생성 비용 없이 분석만 수행.
+    """
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent"
+
+    parts = [
+        {
+            "inlineData": {
+                "mimeType": media_type,
+                "data": image_b64,
+            }
+        },
+        {"text": prompt},
+    ]
+
+    body = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "responseModalities": ["TEXT"],
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            url,
+            params={"key": GOOGLE_API_KEY},
+            json=body,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    text_content = ""
+    for candidate in data.get("candidates", []):
+        for part in candidate.get("content", {}).get("parts", []):
+            if "text" in part:
+                text_content += part["text"]
+
+    text_content = text_content.strip()
+    if text_content.startswith("```"):
+        lines = text_content.split("\n")
+        lines = [line for line in lines if not line.strip().startswith("```")]
+        text_content = "\n".join(lines)
+
+    return json.loads(text_content)
+
+
 async def _call_flux_lora(category: str, prompt: str) -> str:
     """Call Replicate Flux LoRA for furniture image generation. Returns base64."""
     lora_name = LORA_MODELS.get(category, category)
