@@ -13,16 +13,18 @@ from typing import AsyncGenerator
 from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
 from agents.tools.compositor_tools import generate_closed_door, generate_open_door
 from agents.tools.image_tools import (
+    _call_flux_canny_pro,
     _call_gemini_image,
     _call_replicate_inpaint,
+    _composite_inpaint_result,
     _create_furniture_mask,
+    cleanup_photo,
 )
 from agents.tools.pricing_tools import (
-    BASE_PRICES,
-    COUNTERTOP_PRICES,
-    INSTALLATION_BASE,
+    _merge_layout_and_vision,
+    calculate_quote,
 )
-from agents.tools.vision_tools import _call_claude_vision
+from agents.tools.vision_tools import _call_claude_vision, analyze_generated_image
 from shared.constants import CATEGORIES_EN
 from shared.supabase_client import get_service_client
 
@@ -60,9 +62,31 @@ IMAGE_RULES = (
     "No ovens or electronic appliances. "
     "No tall cabinets for sink category. "
     "Sink area must have a visible sink bowl (stainless steel basin) with a faucet centered above it. "
-    "Cabinets under cooktop/induction area must be DRAWERS (not doors). "
+    "Cabinets under cooktop/induction area must be 2-tier DRAWERS (not doors, not oven). "
     "Keep original wall tiles exactly. "
 )
+
+
+async def _correction_pass(furniture_b64: str, category: str) -> str:
+    """2nd pass: 생성된 이미지의 문제를 정밀 보정.
+
+    - 쿡탑 하부: 오븐/빈공간 → 서랍 3단으로 교체
+    - 바닥 잔해 제거
+    - 벽 타일 보존 확인
+    """
+    correction_prompt = (
+        "Fix this kitchen image. Make these EXACT changes ONLY:\n"
+        "1. Below the cooktop/induction: replace any oven, open cavity, or empty space "
+        "with 2 horizontal PULL-OUT DRAWERS with slim handles. "
+        "Each drawer is a flat rectangular panel with one thin horizontal handle.\n"
+        "2. Remove any remaining debris, tools, plastic bags on the floor. "
+        "Floor should be clean.\n"
+        "3. Keep EVERYTHING else IDENTICAL: wall tiles, tile color, cabinet style, "
+        "countertop, sink, upper cabinets, lighting, perspective. "
+        "Do NOT change any other part of the image."
+    )
+
+    return await _call_gemini_image(correction_prompt, furniture_b64)
 
 
 async def _fetch_reference_images(category: str, style: str, limit: int = 2) -> list[str]:
@@ -305,7 +329,29 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     category_name = CATEGORIES_EN.get(request.category, request.category)
     STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
-    module_desc = f"{len(layout_data.get('modules', []))} modules, {wall_width}mm wide"
+    # 모듈별 상세 설명 생성 (Gemini에 하부장 구성 + 위치를 정확히 전달)
+    _modules = layout_data.get("modules", [])
+    module_parts = []
+    for m in _modules:
+        mtype = m.get("type", "cabinet")
+        mw = m.get("width", 600)
+        mx = m.get("position_x", 0)
+        pct = int(mx / wall_width * 100) if wall_width > 0 else 0
+        if mtype == "sink_bowl":
+            module_parts.append(f"sink-bowl({mw}mm, at {pct}%)")
+        elif mtype == "cooktop":
+            module_parts.append(
+                f"cooktop({mw}mm, at {pct}%)+2-DRAWERS-below(NOT oven, NOT open)"
+            )
+        elif m.get("is_2door"):
+            module_parts.append(f"2-door-cabinet({mw}mm, at {pct}%)")
+        else:
+            module_parts.append(f"1-door-cabinet({mw}mm, at {pct}%)")
+    module_desc = (
+        f"{len(_modules)} lower cabinets spanning {wall_width}mm, left to right: "
+        f"[{' | '.join(module_parts)}]. "
+        f"Every module MUST have a door or drawer front — NO open/empty sections."
+    )
 
     # 벽 형태 (1자/L자/U자) — Claude Vision 분석 결과
     wall_layout = space_result.get("wall_layout", "straight")
@@ -332,7 +378,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
         if cooktop_pos:
             pct2 = int(cooktop_pos / wall_width * 100) if wall_width > 0 else 70
-            parts.append(f"cooktop zone with DRAWERS below at {pct2}% from left")
+            parts.append(
+                f"cooktop at {pct2}% from left with 2 horizontal pull-out DRAWERS with handles below "
+                f"(NOT oven, NOT open shelf, NOT empty cavity)"
+            )
         if parts:
             placement_note = ". ".join(parts) + ". "
         placement_note += "No tall cabinets. "
@@ -373,17 +422,68 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender open-door render complete")
 
-            # Generate closed-door image: Gemini uses 3D render as layout guide
-            furniture_b64 = await generate_closed_door(
-                original_b64=image_b64,
-                render_b64=closed_render,
-                style=style,
-                category=request.category,
-                placement_note=placement_note,
-                reference_images=ref_images,
+            # ── FLUX Canny-Pro 하이브리드: 구조 강제 생성 ──
+            style_label = {
+                "modern": "white flat-panel",
+                "nordic": "light wood grain",
+                "classic": "warm brown wood panel",
+                "natural": "natural wood matte",
+                "industrial": "dark charcoal matte",
+                "luxury": "high-gloss pearl white",
+            }.get(style, "white flat-panel")
+
+            flux_prompt = (
+                f"Photorealistic Korean apartment kitchen interior. "
+                f"{style_label} cabinets. "
+                f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
+                f"Lower cabinet layout: {module_desc} "
+                f"{placement_note}"
+                f"Stainless steel sink bowl with faucet. "
+                f"Red/burgundy wall tiles as backsplash. "
+                f"Clean bare floor. Natural interior lighting."
             )
+
+            try:
+                # Step 1: 원본에서 사람/잡동사니 제거 (합성 base)
+                clean_b64 = await cleanup_photo(image_b64)
+                logger.info("Cleanup complete (people/debris removed)")
+
+                # Step 2: FLUX Canny-Pro — Blender 렌더의 엣지를 구조로 강제
+                flux_result = await _call_flux_canny_pro(
+                    prompt=flux_prompt,
+                    control_image_b64=closed_render,
+                    guidance=30,
+                    steps=28,
+                )
+                logger.info("FLUX Canny-Pro generation complete")
+
+                # Step 3: clean 원본 위에 합성 — 마스크 밖 = 깨끗한 원본 픽셀
+                mask_b64 = _create_furniture_mask(
+                    clean_b64, request.category, space_result
+                )
+                furniture_b64 = _composite_inpaint_result(
+                    clean_b64, flux_result, mask_b64
+                )
+                logger.info("FLUX result composited onto clean base")
+
+            except Exception as flux_err:
+                logger.warning(
+                    "FLUX Canny-Pro failed: %s, falling back to Gemini compositor", flux_err
+                )
+                # 폴백: 기존 Gemini compositor 경로
+                furniture_b64 = await generate_closed_door(
+                    original_b64=image_b64,
+                    render_b64=closed_render,
+                    style=style,
+                    category=request.category,
+                    placement_note=placement_note,
+                    reference_images=ref_images,
+                    wall_width=wall_width,
+                    module_count=len(_modules),
+                    module_desc=module_desc,
+                )
+
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Blender-guided furniture generation complete")
 
             # Generate open-door from CLOSED result (ensures same structure)
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
@@ -396,7 +496,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                 reference_images=ref_images,
             )
             await _upload_image(request.project_id, request.user_id, open_b64, "open")
-            logger.info("Blender-guided open-door generation complete")
+            logger.info("Blender+FLUX hybrid pipeline complete")
 
         except Exception as e:
             logger.warning("Blender pipeline failed: %s, falling back to Gemini-only", e)
@@ -414,15 +514,26 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             "luxury": "high-gloss pearl white",
         }.get(style, "white flat-panel")
 
+        # 벽 전체를 채우는 지시 추가
+        wall_fill = (
+            f"Cabinets MUST span the ENTIRE wall width ({wall_width}mm) from left edge to right edge. "
+            f"NO gaps on left or right side. "
+        ) if wall_width > 0 else (
+            "Cabinets MUST span the ENTIRE wall from left edge to right edge with NO gaps. "
+        )
+
         furniture_prompt = (
-            f"Remove ALL objects, people, clothes, tools, debris from this photo. "
+            f"Remove ALL people, clothes, tools, debris, objects ON the floor from this photo. "
             f"Then install {layout_desc}{style_short} {category_name}. "
             f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
+            f"{wall_fill}"
+            f"Lower cabinet layout: {module_desc} "
             f"{placement_note}"
-            f"PRESERVE original walls, tiles, floor, ceiling EXACTLY. Photorealistic."
+            f"PRESERVE original wall tiles, tile color, tile pattern, ceiling EXACTLY. "
+            f"Clean bare floor. Photorealistic."
         )
-        if len(furniture_prompt) > 500:
-            furniture_prompt = furniture_prompt[:497] + "..."
+        if len(furniture_prompt) > 1400:
+            furniture_prompt = furniture_prompt[:1397] + "..."
         logger.info(
             "Furniture prompt (%d chars): %s", len(furniture_prompt), furniture_prompt[:200]
         )
@@ -431,8 +542,20 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             furniture_b64 = await _call_gemini_image(
                 furniture_prompt, image_b64, extra_images=ref_images or None
             )
+            logger.info("Furniture generated via Gemini (pass 1)")
+
+            # Pass 2: 보정 (쿡탑 서랍 + 바닥 잔해)
+            if request.category == "sink":
+                try:
+                    furniture_b64 = await _correction_pass(
+                        furniture_b64, request.category
+                    )
+                    logger.info("Correction pass complete (pass 2)")
+                except Exception as e2:
+                    logger.warning("Correction pass failed, using pass 1 result: %s", e2)
+
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-            logger.info("Furniture generated via Gemini (single-step cleanup+install)")
+            logger.info("Furniture image uploaded")
         except Exception as e:
             logger.warning("Gemini furniture failed: %s, trying Replicate inpaint", e)
 
@@ -483,58 +606,45 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     yield {"type": "progress", "content": "image generation complete"}
 
-    # ─── 4. 견적 산출 ───
+    # ─── 4. 견적 산출 (고객 견적 데이터 기반) ───
     yield {"type": "progress", "content": "quote calculation started"}
     _update_stage(request.project_id, "quote")
 
     try:
-        modules = layout_data.get("modules", [])
-        subtotal = 0
-        quote_items = []
+        # 4-1. Claude Vision으로 생성 이미지 분석 (furniture_b64가 있는 경우)
+        image_analysis = None
+        if furniture_b64:
+            try:
+                image_analysis = await analyze_generated_image(
+                    furniture_b64, request.category
+                )
+                logger.info("Image analysis: %s", json.dumps(image_analysis, ensure_ascii=False)[:200])
+            except Exception as e:
+                logger.warning("Image analysis failed, using layout only: %s", e)
 
-        for m in modules:
-            width_str = str(m.get("width", 600))
-            base_price = BASE_PRICES.get("base_cabinet", {}).get(width_str, 180_000)
-            subtotal += base_price
-            quote_items.append(
-                {
-                    "module": f"{m.get('type', 'cabinet')} {width_str}mm",
-                    "price": base_price,
-                }
-            )
+        # 4-2. Layout Engine + Vision 결과 교차검증/병합
+        verified_modules = _merge_layout_and_vision(layout_data, image_analysis)
 
-        # 설치비
-        installation = INSTALLATION_BASE.get(request.category, 150_000)
-        # 상판 (기본 인조대리석)
-        countertop_area = wall_width / 1000 * 0.58  # 폭 x 깊이(580mm)
-        countertop_price = int(COUNTERTOP_PRICES["artificial_marble"] * countertop_area)
-
-        supply_amount = subtotal + countertop_price + installation
-        vat = int(supply_amount * 0.1)
-        total = supply_amount + vat
-
-        quote_data = {
-            "items": quote_items,
-            "subtotal": subtotal,
-            "countertop": countertop_price,
-            "installation": installation,
-            "supply_amount": supply_amount,
-            "vat": vat,
-            "total": total,
-        }
+        # 4-3. 고객 견적 데이터 기반 견적 산출
+        quote_data = calculate_quote(
+            modules=verified_modules,
+            category=request.category,
+            wall_width=wall_width,
+            grade="basic",
+        )
 
         client.table("quotes").insert(
             {
                 "project_id": request.project_id,
                 "items_json": quote_data,
-                "subtotal": subtotal,
-                "installation_fee": installation,
-                "tax_amount": vat,
-                "total_price": total,
+                "subtotal": quote_data["subtotal"],
+                "installation_fee": quote_data["installation"],
+                "tax_amount": quote_data["vat"],
+                "total_price": quote_data["total"],
             }
         ).execute()
 
-        logger.info("Quote: %s KRW", f"{total:,}")
+        logger.info("Quote: %s KRW", f"{quote_data['total']:,}")
     except Exception as e:
         logger.error("Quote calculation failed: %s", e)
         quote_data = {"error": str(e)}

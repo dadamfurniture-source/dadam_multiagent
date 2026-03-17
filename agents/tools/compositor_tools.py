@@ -33,6 +33,9 @@ async def generate_closed_door(
     category: str,
     placement_note: str = "",
     reference_images: list[str] | None = None,
+    wall_width: int = 0,
+    module_count: int = 0,
+    module_desc: str = "",
 ) -> str:
     """Generate closed-door furniture image using 3D render as layout guide."""
     extra = [render_b64]
@@ -41,19 +44,34 @@ async def generate_closed_door(
 
     style_label = STYLE_SHORT.get(style, "white flat-panel")
 
+    # 벽 폭/모듈 정보 — 빈틈 없이 채우기 지시
+    wall_fill = (
+        f"Cabinets MUST span the ENTIRE wall width ({wall_width}mm) with NO gaps on left or right. "
+        f"Left edge of cabinets = left wall edge. Right edge = right wall edge. "
+    ) if wall_width > 0 else (
+        "Cabinets MUST span the ENTIRE wall from left edge to right edge with NO gaps. "
+    )
+
+    # 모듈 구성 지시
+    module_instruction = (
+        f"Lower cabinet layout: {module_desc} "
+    ) if module_desc else ""
+
     prompt = (
-        f"Remove ALL people, workers, tools, debris, construction waste from this photo. "
-        f"PRESERVE wall tiles, backsplash, wall color, perspective EXACTLY. "
+        f"Remove ALL people, workers, tools, debris, objects ON the floor from this photo. "
+        f"PRESERVE wall tiles, tile color, tile pattern, backsplash, perspective EXACTLY. "
         f"Bare concrete floor → add wood flooring. Unfinished ceiling → patch. "
         f"Install {style_label} {category}: "
         f"UPPER wall cabinets touching ceiling + LOWER base cabinets + countertop. "
-        f"The 2nd image = 3D layout guide. Copy positions EXACTLY. "
-        f"Cooktop zone: 3-tier DRAWERS below (NOT doors, NOT empty). "
-        f"{placement_note}Photorealistic."
+        f"{wall_fill}"
+        f"{module_instruction}"
+        f"The 2nd image = 3D layout guide. Copy positions and FULL WIDTH EXACTLY. "
+        f"Cooktop zone: 2 horizontal pull-out DRAWERS with handles below (NOT oven, NOT open, NOT empty). "
+        f"{placement_note}Photorealistic. Clean bare floor."
     )
 
-    if len(prompt) > 500:
-        prompt = prompt[:497] + "..."
+    if len(prompt) > 1400:
+        prompt = prompt[:1397] + "..."
 
     logger.info("Closed-door prompt (%d chars): %s", len(prompt), prompt[:150])
 
@@ -104,6 +122,7 @@ async def composite_render_onto_photo(
     style: str,
     category: str,
     reference_images: list[str] | None = None,
+    wall_width: int = 0,
 ) -> str:
     """Alias for generate_closed_door (backward compatibility)."""
     return await generate_closed_door(
@@ -112,4 +131,5 @@ async def composite_render_onto_photo(
         style,
         category,
         reference_images=reference_images,
+        wall_width=wall_width,
     )

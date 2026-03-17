@@ -13,7 +13,7 @@ import json
 import httpx
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from agents.prompts import SPACE_ANALYST_PROMPT
+from agents.prompts import FURNITURE_ANALYSIS_PROMPT, SPACE_ANALYST_PROMPT
 from shared.config import settings
 
 ANTHROPIC_API_KEY = settings.anthropic_api_key
@@ -247,6 +247,24 @@ Output ONLY valid JSON, no extra text."""
             }
         ]
     }
+
+
+async def analyze_generated_image(image_b64: str, category: str) -> dict:
+    """생성된 가구 이미지를 분석하여 모듈 구성을 파악.
+
+    Args:
+        image_b64: 생성된 가구 이미지의 base64 인코딩
+        category: 가구 카테고리 (sink, closet 등)
+
+    Returns:
+        모듈 구성 분석 결과 dict (lower_cabinets, upper_cabinets, countertop_length_mm 등)
+    """
+    prompt = f"{FURNITURE_ANALYSIS_PROMPT}\n\nCategory: {category}"
+    try:
+        return await _call_claude_vision(image_b64, prompt)
+    except (json.JSONDecodeError, httpx.HTTPStatusError) as e:
+        # 분석 실패 시 빈 결과 반환 — 레이아웃 엔진 결과로 폴백
+        return {"error": str(e), "confidence": "none"}
 
 
 # MCP Server

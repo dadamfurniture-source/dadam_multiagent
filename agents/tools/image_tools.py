@@ -34,15 +34,14 @@ async def _call_gemini_image(
     """Call Gemini Image API. Returns base64-encoded image.
 
     Args:
-        prompt: Text prompt (max 500 chars for reliability)
+        prompt: Text prompt (max 1500 chars recommended)
         reference_image_b64: Primary reference image (base64)
         extra_images: Additional reference images (base64 list, e.g. style references)
 
-    IMPORTANT: Keep prompt under 500 chars for reliability.
-    Longer prompts may cause IMAGE_OTHER errors in production.
+    Gemini 2.5 Flash supports ~1,920 chars (480 tokens) for image generation.
     """
-    if len(prompt) > 500:
-        prompt = prompt[:497] + "..."
+    if len(prompt) > 1500:
+        prompt = prompt[:1497] + "..."
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
@@ -144,6 +143,94 @@ async def _call_flux_lora(category: str, prompt: str) -> str:
                 raise ValueError(f"Flux LoRA failed: {status_data.get('error')}")
 
     raise TimeoutError("Flux LoRA prediction timed out (3min)")
+
+
+# =============================================================================
+# FLUX Canny-Pro — 구조 강제 이미지 생성
+# =============================================================================
+
+
+async def _call_flux_canny_pro(
+    prompt: str,
+    control_image_b64: str,
+    guidance: float = 30,
+    steps: int = 28,
+    max_retries: int = 2,
+) -> str:
+    """FLUX Canny-Pro: Blender 3D 렌더의 엣지를 구조로 강제하여 이미지 생성.
+
+    Args:
+        prompt: 생성 프롬프트
+        control_image_b64: 구조 제어 이미지 (Blender 렌더) base64
+        guidance: 프롬프트 준수 강도 (높을수록 프롬프트에 충실)
+        steps: 디퓨전 스텝 수
+        max_retries: 실패 시 재시도 횟수
+
+    Returns:
+        base64 인코딩된 생성 이미지
+    """
+    headers = {"Authorization": f"Bearer {REPLICATE_API_TOKEN}"}
+    control_uri = _image_b64_to_data_uri(control_image_b64)
+
+    input_data = {
+        "prompt": prompt,
+        "control_image": control_uri,
+        "guidance": guidance,
+        "num_inference_steps": steps,
+        "output_format": "png",
+    }
+
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=300) as client:
+                resp = await client.post(
+                    "https://api.replicate.com/v1/models/black-forest-labs/flux-canny-pro/predictions",
+                    headers=headers,
+                    json={"input": input_data},
+                )
+                resp.raise_for_status()
+                prediction = resp.json()
+
+                prediction_url = prediction["urls"]["get"]
+                for _ in range(100):
+                    await asyncio.sleep(3)
+                    status_resp = await client.get(prediction_url, headers=headers)
+                    status_data = status_resp.json()
+
+                    if status_data["status"] == "succeeded":
+                        output = status_data["output"]
+                        image_url = output[0] if isinstance(output, list) else output
+                        img_resp = await client.get(image_url)
+                        return base64.b64encode(img_resp.content).decode()
+
+                    if status_data["status"] == "failed":
+                        raise ValueError(f"FLUX Canny-Pro failed: {status_data.get('error')}")
+
+                raise TimeoutError("FLUX Canny-Pro timed out (5min)")
+
+        except (httpx.HTTPStatusError, ValueError, TimeoutError) as e:
+            last_error = e
+            if attempt < max_retries:
+                logger.warning("FLUX Canny-Pro attempt %d failed: %s, retrying...", attempt + 1, e)
+                await asyncio.sleep(2)
+            else:
+                raise ValueError(f"FLUX Canny-Pro failed after {max_retries + 1} attempts: {last_error}")
+
+
+async def cleanup_photo(image_b64: str) -> str:
+    """원본 사진에서 사람/잡동사니/공구를 제거하여 깨끗한 빈 공간 생성.
+
+    FLUX 합성의 base 이미지로 사용 — 마스크 밖 영역이 깨끗해야 함.
+    """
+    cleanup_prompt = (
+        "Remove ALL people, workers, clothes hanging on walls, tools, "
+        "construction debris, plastic bags, and ALL objects from this photo. "
+        "Show ONLY the clean empty room. "
+        "PRESERVE wall tiles, tile color, tile pattern, ceiling, lighting fixtures, "
+        "floor surface EXACTLY as-is. Photorealistic."
+    )
+    return await _call_gemini_image(cleanup_prompt, image_b64)
 
 
 # =============================================================================
