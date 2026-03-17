@@ -32,7 +32,7 @@ OUTPUT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "db", "resultimage",
 )
-NUM_TESTS = 100
+NUM_TESTS = 10
 WALL_WIDTH = 3200  # mm (테스트용 벽 폭)
 CATEGORY = "sink"
 STYLE = "modern"
@@ -129,22 +129,38 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str, flux_promp
         "pipeline": "unknown",
     }
 
+    # 구조 스케치 프롬프트 — 서랍이 명확히 보이는 3D 레이아웃
+    structure_prompt = (
+        "Generate a clean 3D rendering front view of a white kitchen cabinet layout. "
+        "White background. Simple flat shading, no textures, NO text, NO labels, NO dimensions, NO annotations. "
+        "Show clearly: "
+        "Left: 1-door base cabinet (400mm). "
+        "Center-left: sink bowl area (800mm) with 2 doors below. "
+        "Center: 2-door cabinet (900mm). "
+        "Center-right: cooktop/induction with exactly 2 HORIZONTAL PULL-OUT DRAWERS below (600mm) — "
+        "each drawer is a flat rectangular panel with one thin horizontal handle bar. "
+        "Right: 1-door cabinet (500mm). "
+        "Upper row: matching wall cabinets for all positions. "
+        "Continuous countertop on top of all base cabinets. "
+        "Clean minimal 3D render, no perspective distortion, absolutely NO text anywhere."
+    )
+
     try:
         # Step 1: Gemini cleanup — 사람/잡동사니 제거
         clean_b64 = await cleanup_photo(image_b64)
         t1 = time.time() - start
         print(f"  Test {test_num:2d}: Cleanup OK ({t1:.1f}s)", end="")
 
-        # Step 2: Gemini로 가구 이미지 생성 (FLUX control_image용)
-        gemini_b64 = await _call_gemini_image(prompt, clean_b64)
+        # Step 2: 구조 스케치 생성 — 서랍이 명확한 레이아웃 (FLUX control_image용)
+        structure_b64 = await _call_gemini_image(structure_prompt)
         t2 = time.time() - start
-        print(f" → Gemini OK ({t2:.1f}s)", end="")
+        print(f" → Structure OK ({t2:.1f}s)", end="")
 
-        # Step 3: FLUX Canny-Pro — Gemini 결과를 control_image로 구조 강제
+        # Step 3: FLUX Canny-Pro — 구조 스케치를 control_image로 구조 강제
         try:
             flux_b64 = await _call_flux_canny_pro(
                 prompt=flux_prompt,
-                control_image_b64=gemini_b64,
+                control_image_b64=structure_b64,
                 guidance=30,
                 steps=28,
             )
@@ -154,11 +170,12 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str, flux_promp
             # Step 4: clean 원본 위에 합성 (마스크 밖 = 깨끗한 원본)
             mask_b64 = _create_furniture_mask(clean_b64, CATEGORY, None)
             result_b64 = _composite_inpaint_result(clean_b64, flux_b64, mask_b64)
-            result["pipeline"] = "cleanup+gemini+flux+composite"
+            result["pipeline"] = "cleanup+structure+flux+composite"
 
         except Exception as flux_err:
             print(f" → FLUX failed ({flux_err}), using Gemini", end="")
-            result_b64 = gemini_b64
+            # 폴백: Gemini로 가구 직접 생성
+            result_b64 = await _call_gemini_image(prompt, clean_b64)
             result["pipeline"] = "cleanup+gemini-fallback"
 
         elapsed = time.time() - start

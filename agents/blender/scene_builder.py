@@ -110,7 +110,7 @@ def build_scene(config):
                 depth=BASE_DEPTH,
                 height=BASE_HEIGHT,
                 toe_kick=TOE_KICK,
-                num_drawers=3,
+                num_drawers=2,
                 door_state=door_state,
                 position_x=mod_x,
             )
