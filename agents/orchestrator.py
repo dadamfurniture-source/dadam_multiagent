@@ -66,23 +66,44 @@ IMAGE_RULES = (
 
 
 async def _correction_pass(furniture_b64: str, category: str) -> str:
-    """2nd pass: 생성된 이미지의 문제를 정밀 보정.
+    """2nd pass: 쿡탑 영역을 마스킹(흰색) 후 서랍 2단 재생성.
 
-    - 쿡탑 하부: 오븐/빈공간 → 서랍 2단으로 교체
-    - 바닥 잔해 제거
-    - 벽 타일 보존 확인
+    Gemini의 구조 유지 관성을 제거하기 위해
+    기존 구조를 물리적으로 지우고(흰색 박스), 빈 공간에 2서랍을 새로 채움.
     """
+    import base64 as b64mod
+    import io
+
+    from PIL import Image, ImageDraw
+
+    # 1. 이미지에서 쿡탑 하부 영역을 흰색으로 마스킹
+    img_bytes = b64mod.b64decode(furniture_b64)
+    img = Image.open(io.BytesIO(img_bytes))
+    w, h = img.size
+    draw = ImageDraw.Draw(img)
+
+    # 쿡탑 하부 영역: 이미지 오른쪽 55~85% 수평, 하부장 영역 55~85% 수직
+    # (상부장/상판은 보존, 쿡탑 표면도 보존, 하부 도어/서랍 영역만 마스킹)
+    mask_left = int(w * 0.55)
+    mask_right = int(w * 0.85)
+    mask_top = int(h * 0.55)
+    mask_bottom = int(h * 0.82)
+    draw.rectangle([mask_left, mask_top, mask_right, mask_bottom], fill=(255, 255, 255))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    masked_b64 = b64mod.b64encode(buf.getvalue()).decode()
+
+    # 2. 마스킹된 이미지에 서랍 2단 채우기
     correction_prompt = (
-        "Edit this photo. Keep walls, tiles, sink, countertop, upper cabinets identical. "
-        "Change ONLY the area below the cooktop/induction: "
-        "remove any oven or 3-drawer unit and replace with exactly 2 equal-height "
-        "horizontal flat panels (upper panel + lower panel) — these are pull-out drawers. "
-        "Each panel has a thin finger groove along its top edge. "
-        "All cabinet doors are handleless flat panels with finger groove. "
-        "Clean floor."
+        "Edit this photo. Fill the white blank area below the cooktop with "
+        "exactly 2 equal-height horizontal pull-out drawer panels. "
+        "Each drawer is a flat panel matching the cabinet color, "
+        "with a thin finger groove along the top edge. "
+        "Keep everything else identical. Clean floor."
     )
 
-    return await _call_gemini_image(correction_prompt, furniture_b64)
+    return await _call_gemini_image(correction_prompt, masked_b64)
 
 
 async def _fetch_reference_images(category: str, style: str, limit: int = 2) -> list[str]:

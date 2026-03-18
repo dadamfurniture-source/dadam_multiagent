@@ -92,14 +92,13 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         "pipeline": "gemini-2pass",
     }
 
+    # Pass 2에서 쿡탑 하부를 마스킹 후 서랍 재생성 (관성 제거)
     correction_prompt = (
-        "Edit this photo. Keep walls, tiles, sink, countertop, upper cabinets identical. "
-        "Change ONLY the area below the cooktop/induction: "
-        "remove any oven or 3-drawer unit and replace with exactly 2 equal-height "
-        "horizontal flat panels (upper panel + lower panel) — these are pull-out drawers. "
-        "Each panel has a thin finger groove along its top edge. "
-        "All cabinet doors are handleless flat panels with finger groove. "
-        "Clean floor."
+        "Edit this photo. Fill the white blank area below the cooktop with "
+        "exactly 2 equal-height horizontal pull-out drawer panels. "
+        "Each drawer is a flat panel matching the cabinet color, "
+        "with a thin finger groove along the top edge. "
+        "Keep everything else identical. Clean floor."
     )
 
     alt_prompt = (
@@ -115,8 +114,17 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         t1 = time.time() - start
         print(f"  Test {test_num:2d}: Pass1 OK ({t1:.1f}s)", end="")
 
-        # Pass 2: 서랍 보정
-        result_b64 = await _call_gemini_image(correction_prompt, pass1_b64)
+        # Pass 2: 쿡탑 하부 마스킹 → 서랍 2단 재생성
+        import io as _io
+        from PIL import Image as _Img, ImageDraw as _Draw
+        _img = _Img.open(_io.BytesIO(base64.b64decode(pass1_b64)))
+        _w, _h = _img.size
+        _draw = _Draw.Draw(_img)
+        _draw.rectangle([int(_w*0.55), int(_h*0.55), int(_w*0.85), int(_h*0.82)], fill=(255,255,255))
+        _buf = _io.BytesIO()
+        _img.save(_buf, format="PNG")
+        masked_b64 = base64.b64encode(_buf.getvalue()).decode()
+        result_b64 = await _call_gemini_image(correction_prompt, masked_b64)
         t2 = time.time() - start
         print(f" → Pass2 OK ({t2:.1f}s)", end="")
 
