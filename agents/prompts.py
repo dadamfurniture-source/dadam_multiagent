@@ -41,7 +41,7 @@ Detect with confidence levels (high/medium/low):
 - Floor-mounted water pipe stubs or existing sink drain hole
 - Location: lower wall or floor, 0-500mm from floor
 - Also check: existing sink position (if old sink is still installed)
-- → Sink bowl (1000mm wide, rectangular stainless steel) MUST be centered at this position
+- → Sink cabinet (1000mm wide) with rectangular stainless steel bowl MUST be centered at this position
 
 **Exhaust Duct:**
 - Flexible aluminum/silver duct pipe
