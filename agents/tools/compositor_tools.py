@@ -44,34 +44,19 @@ async def generate_closed_door(
 
     style_label = STYLE_SHORT.get(style, "white flat-panel")
 
-    # 벽 폭/모듈 정보 — 빈틈 없이 채우기 지시
-    wall_fill = (
-        f"Cabinets MUST span the ENTIRE wall width ({wall_width}mm) with NO gaps on left or right. "
-        f"Left edge of cabinets = left wall edge. Right edge = right wall edge. "
-    ) if wall_width > 0 else (
-        "Cabinets MUST span the ENTIRE wall from left edge to right edge with NO gaps. "
-    )
-
-    # 모듈 구성 지시
-    module_instruction = (
-        f"Lower cabinet layout: {module_desc} "
-    ) if module_desc else ""
+    module_instruction = f"{module_desc} " if module_desc else ""
 
     prompt = (
-        f"Remove ALL people, workers, tools, debris, objects ON the floor from this photo. "
-        f"PRESERVE wall tiles, tile color, tile pattern, backsplash, perspective EXACTLY. "
-        f"Bare concrete floor → add wood flooring. Unfinished ceiling → patch. "
-        f"Install {style_label} {category}: "
-        f"UPPER wall cabinets touching ceiling + LOWER base cabinets + countertop. "
-        f"{wall_fill}"
+        f"Photorealistic Korean kitchen. {style_label} {category}. "
+        f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
         f"{module_instruction}"
-        f"The 2nd image = 3D layout guide. Copy positions and FULL WIDTH EXACTLY. "
-        f"Cooktop zone: 2 horizontal pull-out DRAWERS with handles below (NOT oven, NOT open, NOT empty). "
-        f"{placement_note}Photorealistic. Clean bare floor."
+        f"2nd image = 3D layout guide, copy positions exactly. "
+        f"Cooktop: 2 pull-out drawers below. {placement_note}"
+        f"Keep original wall tiles and pattern. Clean floor. Remove people/debris."
     )
 
-    if len(prompt) > 1400:
-        prompt = prompt[:1397] + "..."
+    if len(prompt) > 1500:
+        prompt = prompt[:1497] + "..."
 
     logger.info("Closed-door prompt (%d chars): %s", len(prompt), prompt[:150])
 
@@ -97,16 +82,11 @@ async def generate_open_door(
         extra.extend(reference_images[:1])
 
     prompt = (
-        f"Edit this EXACT image: open all cabinet doors and pull out all drawers. "
-        f"The 2nd image = 3D open layout guide. Match it. "
-        f"Keep IDENTICAL cabinet structure, style, color, handles, countertop. "
-        f"Upper+lower doors swing 90deg outward. Drawers pulled 40% forward. "
-        f"Inside: {open_contents}. "
-        f"Do NOT change walls, tiles, floor, ceiling, or perspective AT ALL."
+        f"Open all cabinet doors 90deg outward, pull drawers 40% forward. "
+        f"2nd image = open layout guide. Inside: {open_contents}. "
+        f"Keep cabinet structure, style, color, handles, countertop identical. "
+        f"Keep walls, tiles, floor, ceiling, perspective identical."
     )
-
-    if len(prompt) > 500:
-        prompt = prompt[:497] + "..."
 
     logger.info("Open-door prompt (%d chars): %s", len(prompt), prompt[:150])
 

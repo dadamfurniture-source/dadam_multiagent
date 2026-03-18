@@ -81,30 +81,15 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
         "luxury": "high-gloss pearl white",
     }.get(style, "white flat-panel")
 
-    wall_fill = (
-        f"Cabinets MUST span the ENTIRE wall width ({wall_width}mm) from left edge to right edge. "
-        f"NO gaps on left or right side. "
-    )
-
-    # placement_note
-    sink_pct = 25
-    cooktop_pct = 75
-    placement_note = (
-        f"Stainless steel sink bowl EXACTLY at {sink_pct}% from left (water pipe position). "
-        f"cooktop at {cooktop_pct}% from left with 2 horizontal pull-out DRAWERS with handles below "
-        f"(NOT oven, NOT open shelf, NOT empty cavity). "
-        "No tall cabinets. "
-    )
+    placement_note = "Sink at 25%, cooktop+2drawers at 75%. "
 
     prompt = (
-        f"Remove ALL people, clothes, tools, debris, objects ON the floor from this photo. "
-        f"Then install {layout_desc}{style_short} {CATEGORY}. "
-        f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
-        f"{wall_fill}"
-        f"Lower cabinet layout: {module_desc} "
-        f"{placement_note}"
-        f"PRESERVE original wall tiles, tile color, tile pattern, ceiling EXACTLY. "
-        f"Clean bare floor. Photorealistic."
+        f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets. "
+        f"Upper cabinets flush with ceiling, lower cabinets with countertop, "
+        f"spanning full wall edge-to-edge. "
+        f"{module_desc} {placement_note}"
+        f"Keep original wall tiles and tile pattern. Clean floor. "
+        f"Remove all people, tools, debris."
     )
 
     return prompt, layout_data
@@ -124,15 +109,10 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
     }
 
     correction_prompt = (
-        "Fix this kitchen image. Make these EXACT changes ONLY:\n"
-        "1. Below the cooktop/induction: replace any oven, open cavity, or empty space "
-        "with 2 horizontal PULL-OUT DRAWERS with slim handles. "
-        "Each drawer is a flat rectangular panel with one thin horizontal handle.\n"
-        "2. Remove any remaining debris, tools, plastic bags on the floor. "
-        "Floor should be clean.\n"
-        "3. Keep EVERYTHING else IDENTICAL: wall tiles, tile color, cabinet style, "
-        "countertop, sink, upper cabinets, lighting, perspective. "
-        "Do NOT change any other part of the image."
+        "Edit this kitchen photo. ONLY these changes: "
+        "Replace area below cooktop with 2 flat pull-out drawers with slim handles. "
+        "Clean floor, remove any debris. "
+        "Keep all tiles, cabinets, countertop, sink, lighting identical."
     )
 
     try:

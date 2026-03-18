@@ -58,11 +58,9 @@ STYLE_GUIDE = {
 
 # 이미지 생성 공통 규칙
 IMAGE_RULES = (
-    "No ovens or electronic appliances. "
-    "No tall cabinets for sink category. "
-    "Sink area must have a visible sink bowl (stainless steel basin) with a faucet centered above it. "
-    "Cabinets under cooktop/induction area must be 2-tier DRAWERS (not doors, not oven). "
-    "Keep original wall tiles exactly. "
+    "Stainless steel sink bowl with faucet. "
+    "2 pull-out drawers under cooktop. "
+    "Keep original wall tiles. "
 )
 
 
@@ -74,15 +72,10 @@ async def _correction_pass(furniture_b64: str, category: str) -> str:
     - 벽 타일 보존 확인
     """
     correction_prompt = (
-        "Fix this kitchen image. Make these EXACT changes ONLY:\n"
-        "1. Below the cooktop/induction: replace any oven, open cavity, or empty space "
-        "with 2 horizontal PULL-OUT DRAWERS with slim handles. "
-        "Each drawer is a flat rectangular panel with one thin horizontal handle.\n"
-        "2. Remove any remaining debris, tools, plastic bags on the floor. "
-        "Floor should be clean.\n"
-        "3. Keep EVERYTHING else IDENTICAL: wall tiles, tile color, cabinet style, "
-        "countertop, sink, upper cabinets, lighting, perspective. "
-        "Do NOT change any other part of the image."
+        "Edit this kitchen photo. ONLY these changes: "
+        "Replace area below cooktop with 2 flat pull-out drawers with slim handles. "
+        "Clean floor, remove any debris. "
+        "Keep all tiles, cabinets, countertop, sink, lighting identical."
     )
 
     return await _call_gemini_image(correction_prompt, furniture_b64)
@@ -328,7 +321,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     category_name = CATEGORIES_EN.get(request.category, request.category)
     STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
-    # 모듈별 상세 설명 생성 (Gemini에 하부장 구성 + 위치를 정확히 전달)
+    # 모듈별 설명 (간결하게)
     _modules = layout_data.get("modules", [])
     module_parts = []
     for m in _modules:
@@ -337,53 +330,33 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         mx = m.get("position_x", 0)
         pct = int(mx / wall_width * 100) if wall_width > 0 else 0
         if mtype == "sink_bowl":
-            module_parts.append(f"sink-bowl({mw}mm, at {pct}%)")
+            module_parts.append(f"sink({mw}mm@{pct}%)")
         elif mtype == "cooktop":
-            module_parts.append(
-                f"cooktop({mw}mm, at {pct}%)+2-DRAWERS-below(NOT oven, NOT open)"
-            )
+            module_parts.append(f"cooktop+2drawers({mw}mm@{pct}%)")
         elif m.get("is_2door"):
-            module_parts.append(f"2-door-cabinet({mw}mm, at {pct}%)")
+            module_parts.append(f"2door({mw}mm@{pct}%)")
         else:
-            module_parts.append(f"1-door-cabinet({mw}mm, at {pct}%)")
-    module_desc = (
-        f"{len(_modules)} lower cabinets spanning {wall_width}mm, left to right: "
-        f"[{' | '.join(module_parts)}]. "
-        f"Every module MUST have a door or drawer front — NO open/empty sections."
-    )
+            module_parts.append(f"1door({mw}mm@{pct}%)")
+    module_desc = f"Base cabinets L→R: [{' | '.join(module_parts)}]. All closed with doors/drawers."
 
-    # 벽 형태 (1자/L자/U자) — Claude Vision 분석 결과
+    # 벽 형태
     wall_layout = space_result.get("wall_layout", "straight")
-    layout_desc = ""
-    if wall_layout == "straight":
-        layout_desc = (
-            "STRAIGHT single-wall layout ONLY. All cabinets in a flat line on ONE wall. "
-            "NO L-shape, NO corner wrapping, NO side-wall cabinets. "
-        )
-    elif wall_layout == "L-shape":
-        layout_desc = "L-shaped corner layout. Cabinets wrap around the corner. "
-    elif wall_layout == "U-shape":
-        layout_desc = "U-shaped layout. Cabinets on three walls. "
+    layout_desc = "Straight single-wall. " if wall_layout == "straight" else (
+        "L-shape corner. " if wall_layout == "L-shape" else "U-shape 3-wall. "
+    )
     logger.info("Wall layout: %s", wall_layout)
 
-    # 배관 위치 기반 배치 지시 (싱크대 카테고리)
+    # 배치 지시
     placement_note = ""
     if request.category == "sink":
         parts = []
         if sink_pos:
             pct = int(sink_pos / wall_width * 100) if wall_width > 0 else 30
-            parts.append(
-                f"Stainless steel sink bowl EXACTLY at {pct}% from left (water pipe position)"
-            )
+            parts.append(f"Sink at {pct}%")
         if cooktop_pos:
             pct2 = int(cooktop_pos / wall_width * 100) if wall_width > 0 else 70
-            parts.append(
-                f"cooktop at {pct2}% from left with 2 horizontal pull-out DRAWERS with handles below "
-                f"(NOT oven, NOT open shelf, NOT empty cavity)"
-            )
-        if parts:
-            placement_note = ". ".join(parts) + ". "
-        placement_note += "No tall cabinets. "
+            parts.append(f"Cooktop+2drawers at {pct2}%")
+        placement_note = ", ".join(parts) + ". " if parts else ""
 
     furniture_b64 = None
     open_b64 = None
@@ -476,26 +449,16 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             "luxury": "high-gloss pearl white",
         }.get(style, "white flat-panel")
 
-        # 벽 전체를 채우는 지시 추가
-        wall_fill = (
-            f"Cabinets MUST span the ENTIRE wall width ({wall_width}mm) from left edge to right edge. "
-            f"NO gaps on left or right side. "
-        ) if wall_width > 0 else (
-            "Cabinets MUST span the ENTIRE wall from left edge to right edge with NO gaps. "
-        )
-
         furniture_prompt = (
-            f"Remove ALL people, clothes, tools, debris, objects ON the floor from this photo. "
-            f"Then install {layout_desc}{style_short} {category_name}. "
-            f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
-            f"{wall_fill}"
-            f"Lower cabinet layout: {module_desc} "
-            f"{placement_note}"
-            f"PRESERVE original wall tiles, tile color, tile pattern, ceiling EXACTLY. "
-            f"Clean bare floor. Photorealistic."
+            f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets. "
+            f"Upper cabinets flush with ceiling, lower cabinets with countertop, "
+            f"spanning full wall edge-to-edge. "
+            f"{module_desc} {placement_note}"
+            f"Keep original wall tiles and tile pattern. Clean floor. "
+            f"Remove all people, tools, debris."
         )
-        if len(furniture_prompt) > 1400:
-            furniture_prompt = furniture_prompt[:1397] + "..."
+        if len(furniture_prompt) > 1500:
+            furniture_prompt = furniture_prompt[:1497] + "..."
         logger.info(
             "Furniture prompt (%d chars): %s", len(furniture_prompt), furniture_prompt[:200]
         )
@@ -525,9 +488,8 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         if not furniture_b64:
             try:
                 cleanup_prompt = (
-                    "Remove all furniture, objects, people, clothes, debris. "
-                    "Show only clean empty room with bare walls and floor. "
-                    "Keep wall color, tiles, lighting EXACTLY."
+                    "Empty room: remove all objects, people, furniture. "
+                    "Keep wall tiles, floor, ceiling, lighting identical."
                 )
                 cleanup_b64 = await _call_gemini_image(cleanup_prompt, image_b64)
                 mask_b64 = _create_furniture_mask(cleanup_b64, request.category, space_result)
@@ -554,9 +516,9 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         try:
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
             open_prompt = (
-                f"Edit this image: open all cabinet doors showing interior. "
+                f"Open all cabinet doors 90 degrees outward, pull drawers 40% forward. "
                 f"Inside: {contents}. "
-                f"Do NOT change walls, tiles, floor, or perspective."
+                f"Keep walls, tiles, floor, perspective identical."
             )
             open_b64 = await _call_gemini_image(
                 open_prompt, furniture_b64, extra_images=ref_images or None
