@@ -110,7 +110,8 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
 
     correction_prompt = (
         "Edit this kitchen photo. ONLY these changes: "
-        "Replace area below cooktop with 2 flat pull-out drawers with slim handles. "
+        "Replace area below cooktop with 2 flat pull-out drawers. "
+        "No handles on any cabinet — wood channel groove along top edge only. "
         "Clean floor, remove any debris. "
         "Keep all tiles, cabinets, countertop, sink, lighting identical."
     )

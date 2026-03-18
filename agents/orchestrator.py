@@ -60,6 +60,7 @@ STYLE_GUIDE = {
 IMAGE_RULES = (
     "Rectangular stainless steel sink bowl with gooseneck faucet. "
     "2 pull-out drawers under cooktop. "
+    "No handles on cabinets, use wood channel groove along top edge of each door/drawer instead. "
     "Keep original wall tiles. "
 )
 
@@ -73,7 +74,8 @@ async def _correction_pass(furniture_b64: str, category: str) -> str:
     """
     correction_prompt = (
         "Edit this kitchen photo. ONLY these changes: "
-        "Replace area below cooktop with 2 flat pull-out drawers with slim handles. "
+        "Replace area below cooktop with 2 flat pull-out drawers. "
+        "No handles on any cabinet — wood channel groove along top edge only. "
         "Clean floor, remove any debris. "
         "Keep all tiles, cabinets, countertop, sink, lighting identical."
     )
@@ -450,7 +452,8 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         }.get(style, "white flat-panel")
 
         furniture_prompt = (
-            f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets. "
+            f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets "
+            f"with no handles, wood channel groove along top edge of each door/drawer. "
             f"Upper cabinets flush with ceiling, lower cabinets with countertop, "
             f"spanning full wall edge-to-edge. "
             f"{module_desc} {placement_note}"

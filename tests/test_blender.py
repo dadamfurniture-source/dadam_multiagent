@@ -335,9 +335,6 @@ def test_handle_styles_completeness():
     assert set(HANDLE_STYLES.keys()) == expected
 
     for style, cfg in HANDLE_STYLES.items():
-        assert "length" in cfg, f"{style} missing length"
-        assert "type" in cfg, f"{style} missing type"
-        assert cfg["type"] in ("bar", "arch"), f"{style} unknown type: {cfg['type']}"
         assert "color" in cfg, f"{style} missing color"
         assert len(cfg["color"]) == 3, f"{style} color should be RGB tuple"
 

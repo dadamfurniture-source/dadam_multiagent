@@ -47,7 +47,8 @@ async def generate_closed_door(
     module_instruction = f"{module_desc} " if module_desc else ""
 
     prompt = (
-        f"Photorealistic Korean kitchen. {style_label} {category}. "
+        f"Photorealistic Korean kitchen. {style_label} {category} "
+        f"with no handles, wood channel groove along top edge. "
         f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
         f"{module_instruction}"
         f"2nd image = 3D layout guide, copy positions exactly. "

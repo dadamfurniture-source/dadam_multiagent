@@ -1,19 +1,19 @@
-"""Cabinet handle geometry — style-specific handles.
+"""Cabinet handle geometry — wood channel (목찬넬) handles.
 
-Each style has a characteristic handle shape and color.
-Handles are attached to door/drawer fronts.
+All styles use wood channel handles: a routed groove along the top edge
+of the door/drawer front. No metal handles or knobs.
 """
 
 import bpy
 
-# Handle style definitions: (length_mm, style_type, color_rgb)
+# All styles use wood channel — color matches cabinet body
 HANDLE_STYLES = {
-    "modern": {"length": 128, "type": "bar", "color": (0.15, 0.15, 0.15)},  # dark nickel
-    "nordic": {"length": 128, "type": "bar", "color": (0.7, 0.7, 0.72)},  # brushed silver
-    "classic": {"length": 96, "type": "arch", "color": (0.72, 0.53, 0.04)},  # brass
-    "natural": {"length": 96, "type": "bar", "color": (0.4, 0.35, 0.3)},  # dark bronze
-    "industrial": {"length": 160, "type": "bar", "color": (0.1, 0.1, 0.1)},  # matte black
-    "luxury": {"length": 128, "type": "arch", "color": (0.83, 0.69, 0.22)},  # gold
+    "modern": {"color": (0.9, 0.9, 0.9)},      # white
+    "nordic": {"color": (0.75, 0.65, 0.5)},     # light wood
+    "classic": {"color": (0.5, 0.35, 0.2)},     # brown wood
+    "natural": {"color": (0.6, 0.5, 0.35)},     # natural wood
+    "industrial": {"color": (0.15, 0.15, 0.15)}, # dark charcoal
+    "luxury": {"color": (0.95, 0.95, 0.95)},    # pearl white
 }
 
 
@@ -22,101 +22,46 @@ def create_handle(
     position=(0, 0, 0),
     vertical=True,
 ):
-    """Create a handle at the specified position.
+    """Create a wood channel handle (routed groove along top edge).
+
+    The channel is a thin rectangular groove cut into the top edge of the
+    door/drawer front, allowing fingers to grip and pull open.
 
     Args:
-        style: Style name matching HANDLE_STYLES
-        position: (x, y, z) in mm
-        vertical: True for vertical orientation, False for horizontal
+        style: Style name (determines groove color)
+        position: (x, y, z) center of the door/drawer front
+        vertical: True for door (groove at top), False for drawer (groove at top)
 
     Returns:
-        Handle mesh object
+        Channel groove mesh object
     """
     config = HANDLE_STYLES.get(style, HANDLE_STYLES["modern"])
-    length = config["length"]
-    handle_type = config["type"]
 
     x, y, z = position
 
-    if handle_type == "bar":
-        # Bar handle: cylinder with two mounting posts
-        bar_radius = 5
-        post_radius = 4
-        standoff = 25  # distance from door surface
+    # Wood channel: thin groove along the top edge of door/drawer
+    # Groove dimensions
+    groove_width = 200 if vertical else 300  # wider for drawers
+    groove_height = 20   # thin slot
+    groove_depth = 15    # how deep the groove is cut
 
-        # Main bar
-        bpy.ops.mesh.primitive_cylinder_add(
-            radius=bar_radius,
-            depth=length,
-            location=(x, y - standoff, z),
-        )
-        bar = bpy.context.active_object
-        bar.name = f"Handle_bar_{x:.0f}_{z:.0f}"
+    # Position groove at the TOP edge of the door
+    groove_z = z + 30 if vertical else z + 15
 
-        if vertical:
-            # Already vertical (default cylinder orientation along Z)
-            pass
-        else:
-            import math
-
-            bar.rotation_euler.y = math.radians(90)
-
-        # Mounting posts
-        for offset in [-length / 2 + 10, length / 2 - 10]:
-            post_z = z + offset if vertical else z
-            post_x = x if vertical else x + offset
-
-            bpy.ops.mesh.primitive_cylinder_add(
-                radius=post_radius,
-                depth=standoff,
-                location=(post_x, y - standoff / 2, post_z),
-            )
-            post = bpy.context.active_object
-            post.name = f"Handle_post_{post_x:.0f}"
-            import math
-
-            post.rotation_euler.x = math.radians(90)
-            post.parent = bar
-
-        return bar
-
-    elif handle_type == "arch":
-        # Arch handle: curved bar
-        import math
-
-        bpy.ops.mesh.primitive_torus_add(
-            major_radius=length / 2,
-            minor_radius=4,
-            major_segments=24,
-            minor_segments=8,
-            location=(x, y - 20, z),
-        )
-        arch = bpy.context.active_object
-        arch.name = f"Handle_arch_{x:.0f}_{z:.0f}"
-
-        # Only show half the torus (arch shape)
-        # Use a boolean cutter to remove the back half
-        bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y, z))
-        cutter = bpy.context.active_object
-        cutter.scale = (length, 50, length)
-        bpy.ops.object.transform_apply(scale=True)
-
-        mod = arch.modifiers.new(name="HalfCut", type="BOOLEAN")
-        mod.operation = "DIFFERENCE"
-        mod.object = cutter
-        bpy.context.view_layer.objects.active = arch
-        bpy.ops.object.modifier_apply(modifier="HalfCut")
-        bpy.data.objects.remove(cutter, do_unlink=True)
-
-        if not vertical:
-            arch.rotation_euler.z = math.radians(90)
-
-        return arch
-
-    # Fallback: simple cube handle
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y - 15, z))
-    handle = bpy.context.active_object
-    handle.name = f"Handle_simple_{x:.0f}"
-    handle.scale = (15 / 2, 8 / 2, length / 2)
+    bpy.ops.mesh.primitive_cube_add(
+        size=1,
+        location=(x, y - groove_depth / 2, groove_z),
+    )
+    groove = bpy.context.active_object
+    groove.name = f"WoodChannel_{x:.0f}_{z:.0f}"
+    groove.scale = (groove_width / 2, groove_depth / 2, groove_height / 2)
     bpy.ops.object.transform_apply(scale=True)
-    return handle
+
+    # Apply dark shadow color to suggest depth
+    mat = bpy.data.materials.new(name=f"ChannelShadow_{x:.0f}")
+    r, g, b = config["color"]
+    # Darken slightly for groove shadow effect
+    mat.diffuse_color = (r * 0.4, g * 0.4, b * 0.4, 1.0)
+    groove.data.materials.append(mat)
+
+    return groove
