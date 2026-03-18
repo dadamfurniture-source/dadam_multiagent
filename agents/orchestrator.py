@@ -59,8 +59,8 @@ STYLE_GUIDE = {
 # 이미지 생성 공통 규칙
 IMAGE_RULES = (
     "Rectangular stainless steel sink bowl with gooseneck faucet. "
-    "2 pull-out drawers under cooktop. "
-    "No handles on cabinets, use wood channel groove along top edge of each door/drawer instead. "
+    "Exactly 2 drawers under cooktop. "
+    "Handleless flat panel doors with finger groove along top edge. "
     "Keep original wall tiles. "
 )
 
@@ -73,11 +73,11 @@ async def _correction_pass(furniture_b64: str, category: str) -> str:
     - 벽 타일 보존 확인
     """
     correction_prompt = (
-        "Edit this kitchen photo. ONLY these changes: "
-        "Replace area below cooktop with 2 flat pull-out drawers. "
-        "No handles on any cabinet — wood channel groove along top edge only. "
-        "Clean floor, remove any debris. "
-        "Keep all tiles, cabinets, countertop, sink, lighting identical."
+        "Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
+        "Edit ONLY these: "
+        "Below cooktop, replace with exactly 2 stacked flat drawer panels with finger groove. "
+        "All cabinet doors must be handleless flat panels with finger groove along top edge. "
+        "Floor must be clean and empty."
     )
 
     return await _call_gemini_image(correction_prompt, furniture_b64)
@@ -323,23 +323,28 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     category_name = CATEGORIES_EN.get(request.category, request.category)
     STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
-    # 모듈별 설명 (간결하게)
+    # 모듈별 자연어 설명
     _modules = layout_data.get("modules", [])
-    module_parts = []
+    module_sentences = []
     for m in _modules:
         mtype = m.get("type", "cabinet")
         mw = m.get("width", 600)
         mx = m.get("position_x", 0)
         pct = int(mx / wall_width * 100) if wall_width > 0 else 0
         if mtype == "sink_bowl":
-            module_parts.append(f"sink+rect-steel-bowl+gooseneck-faucet({mw}mm@{pct}%)")
+            module_sentences.append(
+                f"At {pct}% from left: {mw}mm sink cabinet with rectangular stainless steel sink bowl "
+                f"and tall gooseneck faucet on the countertop"
+            )
         elif mtype == "cooktop":
-            module_parts.append(f"cooktop+2drawers({mw}mm@{pct}%)")
+            module_sentences.append(
+                f"At {pct}% from left: {mw}mm cooktop with exactly 2 drawers below (two flat drawer panels stacked vertically)"
+            )
         elif m.get("is_2door"):
-            module_parts.append(f"2door({mw}mm@{pct}%)")
+            module_sentences.append(f"At {pct}% from left: {mw}mm cabinet with 2 doors")
         else:
-            module_parts.append(f"1door({mw}mm@{pct}%)")
-    module_desc = f"Base cabinets L→R: [{' | '.join(module_parts)}]. All closed with doors/drawers."
+            module_sentences.append(f"At {pct}% from left: {mw}mm cabinet with 1 door")
+    module_desc = ". ".join(module_sentences) + "."
 
     # 벽 형태
     wall_layout = space_result.get("wall_layout", "straight")
@@ -350,15 +355,6 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     # 배치 지시
     placement_note = ""
-    if request.category == "sink":
-        parts = []
-        if sink_pos:
-            pct = int(sink_pos / wall_width * 100) if wall_width > 0 else 30
-            parts.append(f"Rectangular stainless steel sink bowl with gooseneck faucet at {pct}%")
-        if cooktop_pos:
-            pct2 = int(cooktop_pos / wall_width * 100) if wall_width > 0 else 70
-            parts.append(f"Cooktop+2drawers at {pct2}%")
-        placement_note = ", ".join(parts) + ". " if parts else ""
 
     furniture_b64 = None
     open_b64 = None
@@ -452,13 +448,13 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         }.get(style, "white flat-panel")
 
         furniture_prompt = (
-            f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets "
-            f"with no handles, wood channel groove along top edge of each door/drawer. "
-            f"Upper cabinets flush with ceiling, lower cabinets with countertop, "
-            f"spanning full wall edge-to-edge. "
-            f"{module_desc} {placement_note}"
-            f"Keep original wall tiles and tile pattern. Clean floor. "
-            f"Remove all people, tools, debris."
+            f"KEEP the original wall tiles, backsplash color, and ceiling exactly as in the photo. "
+            f"Install {layout_desc}{style_short} kitchen cabinets, photorealistic. "
+            f"Handleless flat panel doors with finger groove along top edge. "
+            f"Upper cabinets flush with ceiling. Lower cabinets with countertop. "
+            f"Cabinets span full wall, left edge to right edge. "
+            f"{module_desc} "
+            f"Clean empty floor. Remove people and objects."
         )
         if len(furniture_prompt) > 1500:
             furniture_prompt = furniture_prompt[:1497] + "..."

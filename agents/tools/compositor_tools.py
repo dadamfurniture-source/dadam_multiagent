@@ -47,13 +47,14 @@ async def generate_closed_door(
     module_instruction = f"{module_desc} " if module_desc else ""
 
     prompt = (
-        f"Photorealistic Korean kitchen. {style_label} {category} "
-        f"with no handles, wood channel groove along top edge. "
+        f"KEEP original wall tiles and backsplash exactly. "
+        f"Install {style_label} {category}, photorealistic. "
+        f"Handleless flat panel doors with finger groove along top edge. "
         f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
         f"{module_instruction}"
         f"2nd image = 3D layout guide, copy positions exactly. "
-        f"Cooktop: 2 pull-out drawers below. {placement_note}"
-        f"Keep original wall tiles and pattern. Clean floor. Remove people/debris."
+        f"Cooktop: exactly 2 stacked flat drawer panels. {placement_note}"
+        f"Clean empty floor. Remove people and objects."
     )
 
     if len(prompt) > 1500:

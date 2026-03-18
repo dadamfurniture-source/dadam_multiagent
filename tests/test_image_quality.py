@@ -42,54 +42,37 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
     )
     modules = layout_data.get("modules", [])
 
-    # module_desc 생성 (orchestrator.py와 동일)
-    module_parts = []
+    # module_desc 자연어 생성
+    module_sentences = []
     for m in modules:
         mtype = m.get("type", "cabinet")
         mw = m.get("width", 600)
         mx = m.get("position_x", 0)
         pct = int(mx / wall_width * 100) if wall_width > 0 else 0
         if mtype == "sink_bowl":
-            module_parts.append(f"sink+rect-steel-bowl+gooseneck-faucet({mw}mm@{pct}%)")
+            module_sentences.append(
+                f"At {pct}% from left: {mw}mm sink cabinet with rectangular stainless steel sink bowl "
+                f"and tall gooseneck faucet on the countertop"
+            )
         elif mtype == "cooktop":
-            module_parts.append(
-                f"cooktop+2drawers({mw}mm@{pct}%)"
+            module_sentences.append(
+                f"At {pct}% from left: {mw}mm cooktop with exactly 2 drawers below "
+                f"(two flat drawer panels stacked vertically)"
             )
         elif m.get("is_2door"):
-            module_parts.append(f"2-door-cabinet({mw}mm, at {pct}%)")
+            module_sentences.append(f"At {pct}% from left: {mw}mm cabinet with 2 doors")
         else:
-            module_parts.append(f"1-door-cabinet({mw}mm, at {pct}%)")
-
-    module_desc = (
-        f"{len(modules)} lower cabinets spanning {wall_width}mm, left to right: "
-        f"[{' | '.join(module_parts)}]. "
-        f"Every module MUST have a door or drawer front — NO open/empty sections."
-    )
-
-    # layout_desc
-    layout_desc = (
-        "STRAIGHT single-wall layout ONLY. All cabinets in a flat line on ONE wall. "
-        "NO L-shape, NO corner wrapping, NO side-wall cabinets. "
-    )
-
-    style_short = {
-        "modern": "white flat-panel",
-        "nordic": "light wood grain",
-        "classic": "warm brown wood panel",
-        "natural": "natural wood matte",
-        "industrial": "dark charcoal matte",
-        "luxury": "high-gloss pearl white",
-    }.get(style, "white flat-panel")
-
-    placement_note = "Rectangular stainless steel sink bowl with gooseneck faucet at 25%, cooktop+2drawers at 75%. "
+            module_sentences.append(f"At {pct}% from left: {mw}mm cabinet with 1 door")
+    module_desc = ". ".join(module_sentences) + "."
 
     prompt = (
-        f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets. "
-        f"Upper cabinets flush with ceiling, lower cabinets with countertop, "
-        f"spanning full wall edge-to-edge. "
-        f"{module_desc} {placement_note}"
-        f"Keep original wall tiles and tile pattern. Clean floor. "
-        f"Remove all people, tools, debris."
+        f"KEEP the original wall tiles, backsplash color, and ceiling exactly as in the photo. "
+        f"Install straight single-wall white flat-panel kitchen cabinets, photorealistic. "
+        f"Handleless flat panel doors with finger groove along top edge. "
+        f"Upper cabinets flush with ceiling. Lower cabinets with countertop. "
+        f"Cabinets span full wall, left edge to right edge. "
+        f"{module_desc} "
+        f"Clean empty floor. Remove people and objects."
     )
 
     return prompt, layout_data
@@ -109,11 +92,11 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
     }
 
     correction_prompt = (
-        "Edit this kitchen photo. ONLY these changes: "
-        "Replace area below cooktop with 2 flat pull-out drawers. "
-        "No handles on any cabinet — wood channel groove along top edge only. "
-        "Clean floor, remove any debris. "
-        "Keep all tiles, cabinets, countertop, sink, lighting identical."
+        "Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
+        "Edit ONLY these: "
+        "Below cooktop, replace with exactly 2 stacked flat drawer panels with finger groove. "
+        "All cabinet doors must be handleless flat panels with finger groove along top edge. "
+        "Floor must be clean and empty."
     )
 
     try:
