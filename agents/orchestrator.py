@@ -65,7 +65,11 @@ IMAGE_RULES = (
 )
 
 
-async def _correction_pass(furniture_b64: str, category: str, original_b64: str | None = None) -> str:
+async def _correction_pass(
+    furniture_b64: str,
+    category: str,
+    ref_images: list[str] | None = None,
+) -> str:
     """2nd pass: 쿡탑 영역을 마스킹(흰색) 후 서랍 2단 재생성.
 
     Gemini의 구조 유지 관성을 제거하기 위해
@@ -94,7 +98,7 @@ async def _correction_pass(furniture_b64: str, category: str, original_b64: str 
     img.save(buf, format="PNG")
     masked_b64 = b64mod.b64encode(buf.getvalue()).decode()
 
-    # 2. 마스킹된 이미지에 서랍 2단 채우기 (원본을 참고 이미지로 전달 → 각도 유지)
+    # 2. 마스킹된 이미지에 서랍 2단 채우기 (참고 사진으로 스타일 가이드)
     correction_prompt = (
         "Edit this photo. Fill the white blank area below the cooktop with "
         "exactly 2 equal-height horizontal pull-out drawer panels. "
@@ -104,8 +108,7 @@ async def _correction_pass(furniture_b64: str, category: str, original_b64: str 
         "Keep everything else identical. Clean floor."
     )
 
-    extra = [original_b64] if original_b64 else None
-    return await _call_gemini_image(correction_prompt, masked_b64, extra_images=extra)
+    return await _call_gemini_image(correction_prompt, masked_b64, extra_images=ref_images)
 
 
 async def _fetch_reference_images(category: str, style: str, limit: int = 2) -> list[str]:
@@ -425,7 +428,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             if request.category == "sink":
                 try:
                     furniture_b64 = await _correction_pass(
-                        furniture_b64, request.category, original_b64=image_b64
+                        furniture_b64, request.category, ref_images=ref_images
                     )
                     logger.info("Correction pass complete")
                 except Exception as e2:
@@ -477,7 +480,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             if request.category == "sink":
                 try:
                     furniture_b64 = await _correction_pass(
-                        furniture_b64, request.category, original_b64=image_b64
+                        furniture_b64, request.category, ref_images=ref_images
                     )
                     logger.info("Correction pass complete (pass 2)")
                 except Exception as e2:
@@ -536,8 +539,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                 f"Keep the same camera angle, perspective, vanishing point. "
                 f"Keep walls, tiles, floor, ceiling identical."
             )
+            # Alt 스타일 참고 이미지 조회
+            alt_refs = await _fetch_reference_images(request.category, alt_style_key)
             alt_b64 = await _call_gemini_image(
-                alt_prompt, furniture_b64, extra_images=[image_b64]
+                alt_prompt, furniture_b64, extra_images=alt_refs or None
             )
             await _upload_image(request.project_id, request.user_id, alt_b64, "alt_style")
             logger.info("Alt style (%s) image generated", alt_style_key)

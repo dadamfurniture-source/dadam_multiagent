@@ -126,12 +126,12 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         _buf = _io.BytesIO()
         _img.save(_buf, format="PNG")
         masked_b64 = base64.b64encode(_buf.getvalue()).decode()
-        result_b64 = await _call_gemini_image(correction_prompt, masked_b64, extra_images=[image_b64])
+        result_b64 = await _call_gemini_image(correction_prompt, masked_b64)
         t2 = time.time() - start
         print(f" → Pass2 OK ({t2:.1f}s)", end="")
 
         # Pass 3: Alt style
-        alt_b64 = await _call_gemini_image(alt_prompt, result_b64, extra_images=[image_b64])
+        alt_b64 = await _call_gemini_image(alt_prompt, result_b64)
         t3 = time.time() - start
         print(f" → Alt OK ({t3:.1f}s)", end="")
 
