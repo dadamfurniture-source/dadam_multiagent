@@ -67,6 +67,7 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
 
     prompt = (
         f"Edit this photo: remove people, tools, debris. "
+        f"Keep the same camera angle, perspective, vanishing point, and eye level. "
         f"Keep the existing wall tiles, backsplash, ceiling, windows exactly. "
         f"Install straight single-wall white flat-panel kitchen cabinets on the wall. "
         f"Handleless flat panel doors with finger groove along top edge. "
@@ -92,12 +93,12 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         "pipeline": "gemini-2pass",
     }
 
-    # Pass 2에서 쿡탑 하부를 마스킹 후 서랍 재생성 (관성 제거)
     correction_prompt = (
         "Edit this photo. Fill the white blank area below the cooktop with "
         "exactly 2 equal-height horizontal pull-out drawer panels. "
         "Each drawer is a flat panel matching the cabinet color, "
         "with a thin finger groove along the top edge. "
+        "Keep the same camera angle, perspective, vanishing point. "
         "Keep everything else identical. Clean floor."
     )
 
@@ -105,7 +106,8 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         "Edit this photo: change all cabinet door and drawer colors/material to light wood grain. "
         "Keep the exact same cabinet structure, layout, positions, sink bowl, cooktop. "
         "Handleless flat panels with finger groove along top edge. "
-        "Keep walls, tiles, floor, ceiling, perspective identical."
+        "Keep the same camera angle, perspective, vanishing point. "
+        "Keep walls, tiles, floor, ceiling identical."
     )
 
     try:
@@ -124,12 +126,12 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         _buf = _io.BytesIO()
         _img.save(_buf, format="PNG")
         masked_b64 = base64.b64encode(_buf.getvalue()).decode()
-        result_b64 = await _call_gemini_image(correction_prompt, masked_b64)
+        result_b64 = await _call_gemini_image(correction_prompt, masked_b64, extra_images=[image_b64])
         t2 = time.time() - start
         print(f" → Pass2 OK ({t2:.1f}s)", end="")
 
         # Pass 3: Alt style
-        alt_b64 = await _call_gemini_image(alt_prompt, result_b64)
+        alt_b64 = await _call_gemini_image(alt_prompt, result_b64, extra_images=[image_b64])
         t3 = time.time() - start
         print(f" → Alt OK ({t3:.1f}s)", end="")
 
