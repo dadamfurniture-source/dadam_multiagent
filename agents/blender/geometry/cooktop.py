@@ -93,7 +93,7 @@ def create_drawer_cabinet(
     depth=580,
     height=870,
     toe_kick=150,
-    num_drawers=3,
+    num_drawers=2,
     door_state="closed",
     position_x=0,
     position_y=0,
@@ -107,7 +107,7 @@ def create_drawer_cabinet(
         depth: Depth (mm)
         height: Total height including toe kick (mm)
         toe_kick: Toe kick height (mm)
-        num_drawers: Number of drawer tiers (default 3)
+        num_drawers: Number of drawer tiers (default 2)
         door_state: "closed" or "open" (drawers pulled out)
         position_x: X position (mm)
         position_y: Y position (mm)

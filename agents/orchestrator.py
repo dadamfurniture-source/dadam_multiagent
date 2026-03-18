@@ -68,7 +68,7 @@ IMAGE_RULES = (
 async def _correction_pass(furniture_b64: str, category: str) -> str:
     """2nd pass: 생성된 이미지의 문제를 정밀 보정.
 
-    - 쿡탑 하부: 오븐/빈공간 → 서랍 3단으로 교체
+    - 쿡탑 하부: 오븐/빈공간 → 서랍 2단으로 교체
     - 바닥 잔해 제거
     - 벽 타일 보존 확인
     """
