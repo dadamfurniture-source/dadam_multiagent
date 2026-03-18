@@ -26,6 +26,7 @@ FIXED_MODULE_DEFAULTS: dict[str, dict] = {
 OPEN_DOOR_CONTENTS: dict[str, str] = {
     "sink": (
         "Lower cabinets: 1 shelf inside each, dishes and pots. "
+        "Sink cabinet open showing underside of stainless steel sink bowl and white PVC drain pipe visible. "
         "Upper cabinets: 2 shelves inside each, cups and bowls. "
         "Cooktop drawers pulled out. "
         "Range hood cabinet open showing aluminum flexible exhaust duct connected to wall vent"
