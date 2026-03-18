@@ -515,9 +515,11 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         try:
             contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
             open_prompt = (
-                f"Open all cabinet doors 90 degrees outward, pull drawers 40% forward. "
+                f"Edit this photo: open all cabinet doors 90 degrees outward, pull drawers 40% forward. "
                 f"Inside: {contents}. "
-                f"Keep walls, tiles, floor, perspective identical."
+                f"Keep the same cabinet structure, color, countertop, sink bowl, cooktop position. "
+                f"Doors and drawers are handleless flat panels with finger groove along top edge. "
+                f"Keep walls, tiles, floor, ceiling, perspective identical."
             )
             open_b64 = await _call_gemini_image(
                 open_prompt, furniture_b64, extra_images=ref_images or None

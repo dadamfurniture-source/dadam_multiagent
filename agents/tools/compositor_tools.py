@@ -85,9 +85,10 @@ async def generate_open_door(
         extra.extend(reference_images[:1])
 
     prompt = (
-        f"Open all cabinet doors 90deg outward, pull drawers 40% forward. "
+        f"Edit this photo: open all cabinet doors 90deg outward, pull drawers 40% forward. "
         f"2nd image = open layout guide. Inside: {open_contents}. "
-        f"Keep cabinet structure, style, color, handles, countertop identical. "
+        f"Keep the same cabinet structure, color, countertop, sink bowl, cooktop position. "
+        f"Doors and drawers are handleless flat panels with finger groove along top edge. "
         f"Keep walls, tiles, floor, ceiling, perspective identical."
     )
 
