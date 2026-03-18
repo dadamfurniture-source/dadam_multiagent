@@ -93,10 +93,20 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
     }
 
     correction_prompt = (
-        "Edit this photo. Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
-        "Change ONLY: below cooktop, replace with exactly 2 stacked flat drawer panels. "
-        "All doors must be handleless with finger groove along top edge. "
+        "Edit this photo. Keep walls, tiles, sink, countertop, upper cabinets identical. "
+        "Change ONLY the area below the cooktop/induction: "
+        "remove any oven or 3-drawer unit and replace with exactly 2 equal-height "
+        "horizontal flat panels (upper panel + lower panel) — these are pull-out drawers. "
+        "Each panel has a thin finger groove along its top edge. "
+        "All cabinet doors are handleless flat panels with finger groove. "
         "Clean floor."
+    )
+
+    alt_prompt = (
+        "Edit this photo: change all cabinet door and drawer colors/material to light wood grain. "
+        "Keep the exact same cabinet structure, layout, positions, sink bowl, cooktop. "
+        "Handleless flat panels with finger groove along top edge. "
+        "Keep walls, tiles, floor, ceiling, perspective identical."
     )
 
     try:
@@ -105,22 +115,32 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
         t1 = time.time() - start
         print(f"  Test {test_num:2d}: Pass1 OK ({t1:.1f}s)", end="")
 
-        # Pass 2: 서랍 보정 + 바닥 정리
+        # Pass 2: 서랍 보정
         result_b64 = await _call_gemini_image(correction_prompt, pass1_b64)
         t2 = time.time() - start
         print(f" → Pass2 OK ({t2:.1f}s)", end="")
+
+        # Pass 3: Alt style
+        alt_b64 = await _call_gemini_image(alt_prompt, result_b64)
+        t3 = time.time() - start
+        print(f" → Alt OK ({t3:.1f}s)", end="")
 
         elapsed = time.time() - start
         result["elapsed_sec"] = round(elapsed, 1)
         result["status"] = "success"
 
-        # 결과 이미지 저장
+        # 메인 스타일 저장
         output_file = os.path.join(OUTPUT_DIR, f"test_{test_num:02d}.png")
         with open(output_file, "wb") as f:
             f.write(base64.b64decode(result_b64))
-        result["output_file"] = output_file
 
-        print(f" → Total ({elapsed:.1f}s) -> {output_file}")
+        # Alt 스타일 저장
+        alt_file = os.path.join(OUTPUT_DIR, f"test_{test_num:02d}_alt.png")
+        with open(alt_file, "wb") as f:
+            f.write(base64.b64decode(alt_b64))
+
+        result["output_file"] = output_file
+        print(f" → Total ({elapsed:.1f}s)")
 
     except Exception as e:
         elapsed = time.time() - start

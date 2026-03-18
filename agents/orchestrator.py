@@ -73,9 +73,12 @@ async def _correction_pass(furniture_b64: str, category: str) -> str:
     - 벽 타일 보존 확인
     """
     correction_prompt = (
-        "Edit this photo. Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
-        "Change ONLY: below cooktop, replace with exactly 2 stacked flat drawer panels. "
-        "All doors must be handleless with finger groove along top edge. "
+        "Edit this photo. Keep walls, tiles, sink, countertop, upper cabinets identical. "
+        "Change ONLY the area below the cooktop/induction: "
+        "remove any oven or 3-drawer unit and replace with exactly 2 equal-height "
+        "horizontal flat panels (upper panel + lower panel) — these are pull-out drawers. "
+        "Each panel has a thin finger groove along its top edge. "
+        "All cabinet doors are handleless flat panels with finger groove. "
         "Clean floor."
     )
 
@@ -381,16 +384,6 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender closed-door render complete")
 
-            # Render open doors (same scene, only door rotation changes)
-            open_render = await render_cabinet_scene(
-                layout_data=layout_data,
-                camera_params=camera_params,
-                style=style,
-                category=request.category,
-                door_state="open",
-            )
-            logger.info("Blender open-door render complete")
-
             # ── Blender + Gemini compositor ──
             furniture_b64 = await generate_closed_door(
                 original_b64=image_b64,
@@ -416,18 +409,6 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                     logger.warning("Correction pass failed: %s", e2)
 
             await _upload_image(request.project_id, request.user_id, furniture_b64, "furniture")
-
-            # Generate open-door from CLOSED result
-            contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
-            open_b64 = await generate_open_door(
-                furniture_b64=furniture_b64,
-                render_b64=open_render,
-                style=style,
-                category=request.category,
-                open_contents=contents,
-                reference_images=ref_images,
-            )
-            await _upload_image(request.project_id, request.user_id, open_b64, "open")
             logger.info("Blender+Gemini pipeline complete")
 
         except Exception as e:
@@ -510,24 +491,33 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             except Exception as e:
                 logger.error("Furniture generation failed (all methods): %s", e)
 
-    # 3c. Open Door (Gemini) — fallback 경로에서만 (Blender가 이미 생성한 경우 skip)
-    if furniture_b64 and not open_b64:
+    # 3c. 다른 스타일 이미지 추가 생성
+    if furniture_b64:
+        # 현재 스타일과 다른 스타일 선택
+        ALT_STYLE_MAP = {
+            "modern": ("nordic", "light wood grain"),
+            "nordic": ("modern", "white flat-panel"),
+            "classic": ("natural", "natural wood matte"),
+            "natural": ("classic", "warm brown wood panel"),
+            "industrial": ("modern", "white flat-panel"),
+            "luxury": ("modern", "white flat-panel"),
+        }
+        alt_style_key, alt_style_short = ALT_STYLE_MAP.get(style, ("nordic", "light wood grain"))
+
         try:
-            contents = OPEN_DOOR_CONTENTS.get(request.category, "items on shelves")
-            open_prompt = (
-                f"Edit this photo: open all cabinet doors 90 degrees outward, pull drawers 40% forward. "
-                f"Inside: {contents}. "
-                f"Keep the same cabinet structure, color, countertop, sink bowl, cooktop position. "
-                f"Doors and drawers are handleless flat panels with finger groove along top edge. "
+            alt_prompt = (
+                f"Edit this photo: change all cabinet door and drawer colors/material to {alt_style_short}. "
+                f"Keep the exact same cabinet structure, layout, positions, sink bowl, cooktop. "
+                f"Handleless flat panels with finger groove along top edge. "
                 f"Keep walls, tiles, floor, ceiling, perspective identical."
             )
-            open_b64 = await _call_gemini_image(
-                open_prompt, furniture_b64, extra_images=ref_images or None
+            alt_b64 = await _call_gemini_image(
+                alt_prompt, furniture_b64
             )
-            await _upload_image(request.project_id, request.user_id, open_b64, "open")
-            logger.info("Open door image generated via Gemini")
+            await _upload_image(request.project_id, request.user_id, alt_b64, "alt_style")
+            logger.info("Alt style (%s) image generated", alt_style_key)
         except Exception as e:
-            logger.error("Open door generation failed: %s", e)
+            logger.warning("Alt style generation failed: %s", e)
 
     yield {"type": "progress", "content": "image generation complete"}
 
