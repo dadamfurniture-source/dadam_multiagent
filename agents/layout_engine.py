@@ -24,7 +24,7 @@ FIXED_MODULE_DEFAULTS: dict[str, dict] = {
 
 # Open-door content descriptions per category (for image generation)
 OPEN_DOOR_CONTENTS: dict[str, str] = {
-    "sink": "dishes, pots, cleaning supplies on shelves, pull-out trash bin",
+    "sink": "dishes, pots, cleaning supplies on shelves, pull-out trash bin. Range hood cabinet open showing aluminum flexible exhaust duct connected to wall vent",
     "island": "wine glasses, coffee mugs, small appliances on shelves",
     "closet": "hanging clothes on rail, folded items on shelves, drawers with accessories",
     "fridge_cabinet": "refrigerator visible in center, pantry shelves on sides",
