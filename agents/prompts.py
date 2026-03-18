@@ -35,11 +35,13 @@ Fallback references (when no tiles visible):
 ### STEP 3: Utility Detection
 Detect with confidence levels (high/medium/low):
 
-**Water Supply Pipes:**
+**Water Supply Pipes / Distributor:**
 - Red/blue pipes (hot/cold water)
-- White/beige manifold box with valves
-- Location: lower wall, 200-500mm from floor
-- → Sink bowl MUST be placed at this position
+- White/beige manifold box (분배기) with valves
+- Floor-mounted water pipe stubs or existing sink drain hole
+- Location: lower wall or floor, 0-500mm from floor
+- Also check: existing sink position (if old sink is still installed)
+- → Sink bowl (1000mm wide, rectangular stainless steel) MUST be centered at this position
 
 **Exhaust Duct:**
 - Flexible aluminum/silver duct pipe

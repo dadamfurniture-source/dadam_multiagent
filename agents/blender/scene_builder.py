@@ -172,7 +172,7 @@ def build_scene(config):
             countertop_z=BASE_HEIGHT,
             position_x=leftmost,
             sink_position_x=sink_position_x,
-            sink_width=800 if sink_position_x is not None else 0,
+            sink_width=1000 if sink_position_x is not None else 0,
         )
 
     # ── 4. Handles ──

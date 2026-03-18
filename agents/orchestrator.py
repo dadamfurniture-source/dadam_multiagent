@@ -58,7 +58,7 @@ STYLE_GUIDE = {
 
 # 이미지 생성 공통 규칙
 IMAGE_RULES = (
-    "Stainless steel sink bowl with faucet. "
+    "Rectangular stainless steel sink bowl with gooseneck faucet. "
     "2 pull-out drawers under cooktop. "
     "Keep original wall tiles. "
 )
@@ -330,7 +330,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         mx = m.get("position_x", 0)
         pct = int(mx / wall_width * 100) if wall_width > 0 else 0
         if mtype == "sink_bowl":
-            module_parts.append(f"sink({mw}mm@{pct}%)")
+            module_parts.append(f"sink+rect-steel-bowl+gooseneck-faucet({mw}mm@{pct}%)")
         elif mtype == "cooktop":
             module_parts.append(f"cooktop+2drawers({mw}mm@{pct}%)")
         elif m.get("is_2door"):
@@ -352,7 +352,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         parts = []
         if sink_pos:
             pct = int(sink_pos / wall_width * 100) if wall_width > 0 else 30
-            parts.append(f"Sink at {pct}%")
+            parts.append(f"Rectangular stainless steel sink bowl with gooseneck faucet at {pct}%")
         if cooktop_pos:
             pct2 = int(cooktop_pos / wall_width * 100) if wall_width > 0 else 70
             parts.append(f"Cooktop+2drawers at {pct2}%")

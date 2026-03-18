@@ -17,8 +17,8 @@ MAX_REMAINDER = 10  # maximum acceptable gap
 
 # Category-specific fixed modules (mm widths)
 FIXED_MODULE_DEFAULTS: dict[str, dict] = {
-    "sink": {"sink_bowl": 800, "cooktop": 600},
-    "island": {"sink_bowl": 800},
+    "sink": {"sink_bowl": 1000, "cooktop": 600},
+    "island": {"sink_bowl": 1000},
     "vanity": {"sink_bowl": 600},
 }
 

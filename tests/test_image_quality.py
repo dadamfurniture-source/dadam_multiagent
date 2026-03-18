@@ -50,10 +50,10 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
         mx = m.get("position_x", 0)
         pct = int(mx / wall_width * 100) if wall_width > 0 else 0
         if mtype == "sink_bowl":
-            module_parts.append(f"sink-bowl({mw}mm, at {pct}%)")
+            module_parts.append(f"sink+rect-steel-bowl+gooseneck-faucet({mw}mm@{pct}%)")
         elif mtype == "cooktop":
             module_parts.append(
-                f"cooktop({mw}mm, at {pct}%)+3-DRAWERS-below(NOT oven, NOT open)"
+                f"cooktop+2drawers({mw}mm@{pct}%)"
             )
         elif m.get("is_2door"):
             module_parts.append(f"2-door-cabinet({mw}mm, at {pct}%)")
@@ -81,7 +81,7 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
         "luxury": "high-gloss pearl white",
     }.get(style, "white flat-panel")
 
-    placement_note = "Sink at 25%, cooktop+2drawers at 75%. "
+    placement_note = "Rectangular stainless steel sink bowl with gooseneck faucet at 25%, cooktop+2drawers at 75%. "
 
     prompt = (
         f"Photorealistic Korean kitchen. {layout_desc}{style_short} cabinets. "
