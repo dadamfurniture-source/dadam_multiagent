@@ -15,13 +15,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.layout_engine import plan_layout
-from agents.tools.image_tools import (
-    _call_flux_canny_pro,
-    _call_gemini_image,
-    _composite_inpaint_result,
-    _create_furniture_mask,
-    cleanup_photo,
-)
+from agents.tools.image_tools import _call_gemini_image
 
 # ─── 설정 ───
 TEST_IMAGE_PATH = os.path.join(
@@ -116,8 +110,8 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
     return prompt, layout_data
 
 
-async def run_single_test(test_num: int, image_b64: str, prompt: str, flux_prompt: str) -> dict:
-    """단일 테스트: Gemini 생성 → FLUX Canny-Pro 구조 강제 → 원본 합성."""
+async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
+    """단일 테스트: Gemini 2-pass (생성 + 서랍 보정)."""
     start = time.time()
     result = {
         "test_num": test_num,
@@ -126,57 +120,31 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str, flux_promp
         "error": None,
         "output_file": None,
         "prompt_length": len(prompt),
-        "pipeline": "unknown",
+        "pipeline": "gemini-2pass",
     }
 
-    # 구조 스케치 프롬프트 — 서랍이 명확히 보이는 3D 레이아웃
-    structure_prompt = (
-        "Generate a clean 3D rendering front view of a white kitchen cabinet layout. "
-        "White background. Simple flat shading, no textures, NO text, NO labels, NO dimensions, NO annotations. "
-        "Show clearly: "
-        "Left: 1-door base cabinet (400mm). "
-        "Center-left: sink bowl area (800mm) with 2 doors below. "
-        "Center: 2-door cabinet (900mm). "
-        "Center-right: cooktop/induction with exactly 2 HORIZONTAL PULL-OUT DRAWERS below (600mm) — "
-        "each drawer is a flat rectangular panel with one thin horizontal handle bar. "
-        "Right: 1-door cabinet (500mm). "
-        "Upper row: matching wall cabinets for all positions. "
-        "Continuous countertop on top of all base cabinets. "
-        "Clean minimal 3D render, no perspective distortion, absolutely NO text anywhere."
+    correction_prompt = (
+        "Fix this kitchen image. Make these EXACT changes ONLY:\n"
+        "1. Below the cooktop/induction: replace any oven, open cavity, or empty space "
+        "with 2 horizontal PULL-OUT DRAWERS with slim handles. "
+        "Each drawer is a flat rectangular panel with one thin horizontal handle.\n"
+        "2. Remove any remaining debris, tools, plastic bags on the floor. "
+        "Floor should be clean.\n"
+        "3. Keep EVERYTHING else IDENTICAL: wall tiles, tile color, cabinet style, "
+        "countertop, sink, upper cabinets, lighting, perspective. "
+        "Do NOT change any other part of the image."
     )
 
     try:
-        # Step 1: Gemini cleanup — 사람/잡동사니 제거
-        clean_b64 = await cleanup_photo(image_b64)
+        # Pass 1: Gemini 가구 생성
+        pass1_b64 = await _call_gemini_image(prompt, image_b64)
         t1 = time.time() - start
-        print(f"  Test {test_num:2d}: Cleanup OK ({t1:.1f}s)", end="")
+        print(f"  Test {test_num:2d}: Pass1 OK ({t1:.1f}s)", end="")
 
-        # Step 2: 구조 스케치 생성 — 서랍이 명확한 레이아웃 (FLUX control_image용)
-        structure_b64 = await _call_gemini_image(structure_prompt)
+        # Pass 2: 서랍 보정 + 바닥 정리
+        result_b64 = await _call_gemini_image(correction_prompt, pass1_b64)
         t2 = time.time() - start
-        print(f" → Structure OK ({t2:.1f}s)", end="")
-
-        # Step 3: FLUX Canny-Pro — 구조 스케치를 control_image로 구조 강제
-        try:
-            flux_b64 = await _call_flux_canny_pro(
-                prompt=flux_prompt,
-                control_image_b64=structure_b64,
-                guidance=30,
-                steps=28,
-            )
-            t3 = time.time() - start
-            print(f" → FLUX OK ({t3:.1f}s)", end="")
-
-            # Step 4: clean 원본 위에 합성 (마스크 밖 = 깨끗한 원본)
-            mask_b64 = _create_furniture_mask(clean_b64, CATEGORY, None)
-            result_b64 = _composite_inpaint_result(clean_b64, flux_b64, mask_b64)
-            result["pipeline"] = "cleanup+structure+flux+composite"
-
-        except Exception as flux_err:
-            print(f" → FLUX failed ({flux_err}), using Gemini", end="")
-            # 폴백: Gemini로 가구 직접 생성
-            result_b64 = await _call_gemini_image(prompt, clean_b64)
-            result["pipeline"] = "cleanup+gemini-fallback"
+        print(f" → Pass2 OK ({t2:.1f}s)", end="")
 
         elapsed = time.time() - start
         result["elapsed_sec"] = round(elapsed, 1)
@@ -224,52 +192,18 @@ async def main():
         print(f"  {m['type']:12s} {m['width']:4d}mm  pos_x={m['position_x']:4d}mm")
 
     # FLUX 프롬프트 (구조 강제용 — 짧고 시각적)
-    flux_prompt = (
-        f"Photorealistic Korean apartment kitchen interior. "
-        f"white flat-panel cabinets. "
-        f"Upper wall cabinets flush with ceiling. Lower base cabinets with countertop. "
-        f"Stainless steel sink bowl with faucet. Induction cooktop with 2 pull-out drawers below. "
-        f"Red/burgundy wall tiles as backsplash. "
-        f"Clean bare floor. Natural interior lighting."
-    )
-
     # 프롬프트 저장
     prompt_file = os.path.join(OUTPUT_DIR, "prompt.txt")
     with open(prompt_file, "w", encoding="utf-8") as f:
-        f.write(f"=== Gemini Prompt ===\n{prompt}\n\n=== FLUX Prompt ===\n{flux_prompt}")
+        f.write(prompt)
     print(f"\nPrompt saved: {prompt_file}")
 
-    # 이전 실패 결과가 있으면 해당 번호만 재시도
-    summary_file = os.path.join(OUTPUT_DIR, "test_summary.json")
-    retry_nums = None
-    if os.path.exists(summary_file):
-        with open(summary_file, encoding="utf-8") as sf:
-            prev = json.load(sf)
-        failed_nums = [r["test_num"] for r in prev.get("results", []) if r["status"] == "failed"]
-        if failed_nums:
-            retry_nums = failed_nums
-            print(f"\n--- Retrying {len(failed_nums)} failed tests ---")
-
-    test_nums = retry_nums if retry_nums else list(range(1, NUM_TESTS + 1))
-    print(f"\n--- Running {len(test_nums)} tests (Cleanup → Gemini → FLUX Canny → Composite) ---")
+    # 테스트 실행
+    print(f"\n--- Running {NUM_TESTS} tests (Gemini 2-pass) ---")
     results = []
-
-    # 이전 성공 결과 보존
-    prev_success = {}
-    if retry_nums and os.path.exists(summary_file):
-        for r in prev.get("results", []):
-            if r["status"] == "success":
-                prev_success[r["test_num"]] = r
-
-    for i in test_nums:
-        result = await run_single_test(i, image_b64, prompt, flux_prompt)
+    for i in range(1, NUM_TESTS + 1):
+        result = await run_single_test(i, image_b64, prompt)
         results.append(result)
-
-    # 이전 성공 + 새 결과 병합
-    if prev_success:
-        all_results = list(prev_success.values()) + results
-        all_results.sort(key=lambda r: r["test_num"])
-        results = all_results
 
     # 결과 요약
     success_count = sum(1 for r in results if r["status"] == "success")
