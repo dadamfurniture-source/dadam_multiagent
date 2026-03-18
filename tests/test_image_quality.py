@@ -20,7 +20,7 @@ from agents.tools.image_tools import _call_gemini_image
 # ─── 설정 ───
 TEST_IMAGE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "db", "testimage", "KakaoTalk_20260206_063235558.jpg",
+    "db", "testimage", "KakaoTalk_20260315_005837587.jpg",
 )
 OUTPUT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -66,13 +66,14 @@ def build_prompt(wall_width: int, category: str, style: str) -> str:
     module_desc = ". ".join(module_sentences) + "."
 
     prompt = (
-        f"KEEP the original wall tiles, backsplash color, and ceiling exactly as in the photo. "
-        f"Install straight single-wall white flat-panel kitchen cabinets, photorealistic. "
+        f"Edit this photo: remove people, tools, debris. "
+        f"Keep the existing wall tiles, backsplash, ceiling, windows exactly. "
+        f"Install straight single-wall white flat-panel kitchen cabinets on the wall. "
         f"Handleless flat panel doors with finger groove along top edge. "
         f"Upper cabinets flush with ceiling. Lower cabinets with countertop. "
         f"Cabinets span full wall, left edge to right edge. "
         f"{module_desc} "
-        f"Clean empty floor. Remove people and objects."
+        f"Clean floor."
     )
 
     return prompt, layout_data
@@ -92,11 +93,10 @@ async def run_single_test(test_num: int, image_b64: str, prompt: str) -> dict:
     }
 
     correction_prompt = (
-        "Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
-        "Edit ONLY these: "
-        "Below cooktop, replace with exactly 2 stacked flat drawer panels with finger groove. "
-        "All cabinet doors must be handleless flat panels with finger groove along top edge. "
-        "Floor must be clean and empty."
+        "Edit this photo. Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
+        "Change ONLY: below cooktop, replace with exactly 2 stacked flat drawer panels. "
+        "All doors must be handleless with finger groove along top edge. "
+        "Clean floor."
     )
 
     try:

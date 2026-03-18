@@ -73,11 +73,10 @@ async def _correction_pass(furniture_b64: str, category: str) -> str:
     - 벽 타일 보존 확인
     """
     correction_prompt = (
-        "Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
-        "Edit ONLY these: "
-        "Below cooktop, replace with exactly 2 stacked flat drawer panels with finger groove. "
-        "All cabinet doors must be handleless flat panels with finger groove along top edge. "
-        "Floor must be clean and empty."
+        "Edit this photo. Keep wall tiles, sink bowl, countertop, upper cabinets identical. "
+        "Change ONLY: below cooktop, replace with exactly 2 stacked flat drawer panels. "
+        "All doors must be handleless with finger groove along top edge. "
+        "Clean floor."
     )
 
     return await _call_gemini_image(correction_prompt, furniture_b64)
@@ -448,13 +447,14 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         }.get(style, "white flat-panel")
 
         furniture_prompt = (
-            f"KEEP the original wall tiles, backsplash color, and ceiling exactly as in the photo. "
-            f"Install {layout_desc}{style_short} kitchen cabinets, photorealistic. "
+            f"Edit this photo: remove people, tools, debris. "
+            f"Keep the existing wall tiles, backsplash, ceiling, windows exactly. "
+            f"Install {layout_desc}{style_short} kitchen cabinets on the wall. "
             f"Handleless flat panel doors with finger groove along top edge. "
             f"Upper cabinets flush with ceiling. Lower cabinets with countertop. "
             f"Cabinets span full wall, left edge to right edge. "
             f"{module_desc} "
-            f"Clean empty floor. Remove people and objects."
+            f"Clean floor."
         )
         if len(furniture_prompt) > 1500:
             furniture_prompt = furniture_prompt[:1497] + "..."
