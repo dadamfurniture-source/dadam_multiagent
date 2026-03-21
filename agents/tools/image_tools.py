@@ -107,7 +107,7 @@ async def _call_gemini_vision(
 
     텍스트만 반환하도록 설정하여 이미지 생성 비용 없이 분석만 수행.
     """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
     parts = [
         {

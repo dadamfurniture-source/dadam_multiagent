@@ -6,6 +6,8 @@ const API_BASE = '/api/v1';
 
 // Auth token (set after login)
 let authToken = localStorage.getItem('dadam_token') || '';
+let _supabaseClient = null;
+let _refreshingToken = false;
 
 function setToken(token) {
   authToken = token;
@@ -20,10 +22,53 @@ function apiHeaders() {
 }
 
 // ============================================================
+// Supabase Client (lazy init for token refresh)
+// ============================================================
+
+async function _getSupabase() {
+  if (_supabaseClient) return _supabaseClient;
+  try {
+    const resp = await fetch('/api/v1/config');
+    const cfg = await resp.json();
+    if (cfg.supabase_url && cfg.supabase_anon_key && window.supabase) {
+      _supabaseClient = window.supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+    }
+  } catch (e) {
+    console.warn('Supabase init failed:', e);
+  }
+  return _supabaseClient;
+}
+
+async function _tryRefreshToken() {
+  if (_refreshingToken) return false;
+  _refreshingToken = true;
+  try {
+    const refreshToken = localStorage.getItem('dadam_refresh_token');
+    if (!refreshToken) return false;
+    const sb = await _getSupabase();
+    if (!sb) return false;
+    const { data, error } = await sb.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data.session) return false;
+    setToken(data.session.access_token);
+    localStorage.setItem('dadam_refresh_token', data.session.refresh_token);
+    localStorage.setItem('dadam_user', JSON.stringify({
+      id: data.session.user.id,
+      email: data.session.user.email,
+    }));
+    return true;
+  } catch (e) {
+    console.warn('Token refresh failed:', e);
+    return false;
+  } finally {
+    _refreshingToken = false;
+  }
+}
+
+// ============================================================
 // Auth Guard + 401 Handler
 // ============================================================
 
-const PUBLIC_PAGES = ['/', '/index.html', '/login.html', '/signup.html', '/auth-callback.html', '/pricing.html'];
+const PUBLIC_PAGES = ['/', '/index.html', '/login.html', '/signup.html', '/auth-callback.html', '/pricing.html', '/forgot-password.html'];
 
 function requireAuth() {
   const path = window.location.pathname;
@@ -36,16 +81,26 @@ function requireAuth() {
 }
 
 async function apiFetch(url, options = {}) {
-  const resp = await fetch(url, {
+  let resp = await fetch(url, {
     ...options,
     headers: { ...apiHeaders(), ...(options.headers || {}) },
   });
+  // 401 → try refresh token once, then retry
   if (resp.status === 401) {
-    localStorage.removeItem('dadam_token');
-    localStorage.removeItem('dadam_refresh_token');
-    localStorage.removeItem('dadam_user');
-    window.location.href = `/login.html?redirect=${encodeURIComponent(window.location.pathname)}`;
-    throw new Error('인증이 만료되었습니다.');
+    const refreshed = await _tryRefreshToken();
+    if (refreshed) {
+      resp = await fetch(url, {
+        ...options,
+        headers: { ...apiHeaders(), ...(options.headers || {}) },
+      });
+    }
+    if (resp.status === 401) {
+      localStorage.removeItem('dadam_token');
+      localStorage.removeItem('dadam_refresh_token');
+      localStorage.removeItem('dadam_user');
+      window.location.href = `/login.html?redirect=${encodeURIComponent(window.location.pathname)}`;
+      throw new Error('인증이 만료되었습니다.');
+    }
   }
   return resp;
 }
@@ -241,13 +296,24 @@ function initNewProjectPage() {
       const notesInput = document.getElementById('notes');
       if (notesInput && notesInput.value) formData.append('notes', notesInput.value);
 
-      const resp = await fetch(`${API_BASE}/projects`, {
+      let resp = await fetch(`${API_BASE}/projects`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${authToken}` },
         body: formData,
       });
 
-      if (resp.status === 401) { handleLogout(); return; }
+      // 401 → try refresh then retry
+      if (resp.status === 401) {
+        const refreshed = await _tryRefreshToken();
+        if (refreshed) {
+          resp = await fetch(`${API_BASE}/projects`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${authToken}` },
+            body: formData,
+          });
+        }
+        if (resp.status === 401) { handleLogout(); return; }
+      }
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || data.message || 'Failed');
 
@@ -554,9 +620,28 @@ async function initProjectListPage() {
 // Init
 // ============================================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   renderNav();
   if (!requireAuth()) return;
+
+  // Proactively refresh token if it looks expired (JWT exp check)
+  if (authToken) {
+    try {
+      const payload = JSON.parse(atob(authToken.split('.')[1]));
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        const refreshed = await _tryRefreshToken();
+        if (!refreshed) {
+          localStorage.removeItem('dadam_token');
+          localStorage.removeItem('dadam_refresh_token');
+          localStorage.removeItem('dadam_user');
+          window.location.href = `/login.html?redirect=${encodeURIComponent(window.location.pathname)}`;
+          return;
+        }
+        renderNav(); // re-render with fresh user info
+      }
+    } catch (e) { /* non-JWT token, skip check */ }
+  }
+
   initNewProjectPage();
   initProjectPage();
   initProjectListPage();
