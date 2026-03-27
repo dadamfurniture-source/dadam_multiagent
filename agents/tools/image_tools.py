@@ -123,6 +123,7 @@ async def _call_gemini_vision(
         "contents": [{"parts": parts}],
         "generationConfig": {
             "responseModalities": ["TEXT"],
+            "responseMimeType": "application/json",
         },
     }
 

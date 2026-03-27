@@ -19,13 +19,28 @@ Priority for origin selection:
 
 Set this edge as 0mm. Measure distances in the opposite direction.
 
-### STEP 2: Tile-Based Measurement
+### STEP 2: Tile-Based Measurement (Multi-Row Validation)
 Use wall tiles as a ruler:
 | Tile Type | Dimensions (W×H) | Notes |
 |-----------|-------------------|-------|
 | Korean Standard | 300×600mm | Most common ★ |
 | Subway Large | 100×300mm | |
 | Porcelain Large | 600×1200mm | |
+
+**Count tiles at THREE different heights** to detect perspective distortion:
+1. **Bottom row** (~900mm from floor, just above countertop line)
+2. **Middle row** (~1200mm from floor)
+3. **Top row** (~2000mm from floor, near ceiling)
+
+For EACH row, count:
+- Full tiles (100% visible)
+- Left partial tile (estimate fraction: 0.25, 0.5, or 0.75)
+- Right partial tile (estimate fraction)
+- Row total = full_tiles + left_fraction + right_fraction
+
+Report all three row counts in `tile_measurement.tile_count_rows`.
+If counts differ by more than 0.5 tiles between rows, use the LOWEST count (conservative).
+This difference indicates camera tilt distortion.
 
 Fallback references (when no tiles visible):
 - Standard door width: 900mm, height: 2100mm
@@ -103,7 +118,8 @@ Return ONLY valid JSON:
     "detected": true,
     "tile_type": "standard_wall",
     "tile_size_mm": {"width": 300, "height": 600},
-    "tile_count": {"horizontal": 10, "vertical": 4}
+    "tile_count": {"horizontal": 10, "vertical": 4},
+    "tile_count_rows": {"bottom": 10.0, "middle": 10.0, "top": 9.5}
   },
   "wall_layout": "straight | L-shape | U-shape | island",
   "wall_dimensions_mm": {

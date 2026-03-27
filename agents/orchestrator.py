@@ -19,6 +19,7 @@ from agents.tools.image_tools import (
     _create_furniture_mask,
     cleanup_photo,
 )
+from agents.tools.vision_tools import _call_claude_vision
 from agents.tools.pricing_tools import (
     _merge_layout_and_vision,
     calculate_quote,
@@ -258,8 +259,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         yield {"type": "error", "error": f"이미지 다운로드 실패: {e}"}
         return
 
+    measurement_confidence = 0.5  # 기본 신뢰도
     try:
         from agents.prompts import SPACE_ANALYST_PROMPT
+        from agents.tools.measurement_tools import analyze_space_validated, correct_for_perspective
 
         analysis_prompt = (
             f"{SPACE_ANALYST_PROMPT}\n\n"
@@ -267,17 +270,29 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             f"Category: {request.category}\n"
             f"Analyze this photo and return the JSON output as specified above."
         )
-        space_result = await _call_gemini_vision(image_b64, analysis_prompt, media_type)
-        logger.info(
-            "Space analysis complete: %s", json.dumps(space_result, ensure_ascii=False)[:200]
+        # 듀얼 모델 교차 검증 (Claude Sonnet 4 + Gemini Flash 병렬)
+        space_result, measurement_confidence = await analyze_space_validated(
+            image_b64, analysis_prompt, media_type
         )
+        logger.info(
+            "Space analysis complete (confidence=%.2f): %s",
+            measurement_confidence,
+            json.dumps(space_result, ensure_ascii=False)[:200],
+        )
+
+        # 원근 보정 (camera_params 활용)
+        camera_params = space_result.get("camera_params", {})
+        if camera_params and "wall_dimensions_mm" in space_result:
+            raw_width = space_result["wall_dimensions_mm"].get("width", 0)
+            corrected = correct_for_perspective(raw_width, camera_params)
+            space_result["wall_dimensions_mm"]["width"] = corrected
     except Exception as e:
         logger.error("Space analysis failed: %s", e)
-        # 기본값으로 계속 진행
         space_result = {
             "wall_dimensions_mm": {"width": 3000, "height": 2400},
             "utility_positions": {},
         }
+        measurement_confidence = 0.3
 
     # DB에 공간 분석 저장
     try:
@@ -308,7 +323,15 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     wall_layout = space_result.get("wall_layout", "straight")
     secondary_width = wall_dims.get("secondary_width", 0) or 0
     tertiary_width = wall_dims.get("tertiary_width", 0) or 0
-    # ㄱ자/ㄷ자/대면형: 전체 길이 합산
+
+    # 실측 보정 적용 (10건 이상 축적 시)
+    try:
+        from agents.tools.calibration_tools import apply_calibration, save_ai_measurement
+        wall_width, cal_meta = await apply_calibration(wall_width, request.category)
+        logger.info("Calibration: %s", cal_meta)
+    except Exception as e:
+        logger.warning("Calibration skipped: %s", e)
+
     total_wall_width = wall_width + secondary_width + tertiary_width
     logger.info("Wall layout: %s, primary=%d, secondary=%d, tertiary=%d, total=%d",
                 wall_layout, wall_width, secondary_width, tertiary_width, total_wall_width)
@@ -321,9 +344,32 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     cooktop_pos = exhaust_duct.get("from_origin_mm") or exhaust_duct.get("position_mm")
     logger.info("Utility positions — sink: %s, cooktop: %s", sink_pos, cooktop_pos)
 
+    # AI 측정값 저장 (보정 데이터 축적용)
     try:
+        await save_ai_measurement(
+            request.project_id, request.category, wall_width,
+            sink_position_mm=sink_pos, cooktop_position_mm=cooktop_pos,
+            confidence=measurement_confidence,
+        )
+    except Exception as e:
+        logger.warning("Save measurement failed: %s", e)
+
+    # confidence 기반 측정 tolerance
+    if measurement_confidence >= 0.9:
+        width_tolerance = 0
+    elif measurement_confidence >= 0.7:
+        width_tolerance = 50
+    elif measurement_confidence >= 0.4:
+        width_tolerance = 100
+    else:
+        width_tolerance = 150
+    logger.info("Measurement confidence=%.2f → tolerance=±%dmm", measurement_confidence, width_tolerance)
+
+    try:
+        # tolerance 적용: 보수적 벽면 너비 사용 (측정 오차 고려)
+        safe_wall_width = wall_width - width_tolerance
         layout_data = plan_layout(
-            wall_width=wall_width,
+            wall_width=max(600, safe_wall_width),
             category=request.category,
             sink_position=sink_pos,
             cooktop_position=cooktop_pos,
@@ -574,20 +620,10 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     _update_stage(request.project_id, "quote")
 
     try:
-        # 4-1. Gemini Vision으로 생성 이미지 분석 (furniture_b64가 있는 경우)
-        image_analysis = None
-        if furniture_b64:
-            try:
-                analysis_prompt = f"{FURNITURE_ANALYSIS_PROMPT}\n\nCategory: {request.category}"
-                image_analysis = await _call_gemini_vision(
-                    furniture_b64, analysis_prompt
-                )
-                logger.info("Image analysis: %s", json.dumps(image_analysis, ensure_ascii=False)[:200])
-            except Exception as e:
-                logger.warning("Image analysis failed, using layout only: %s", e)
-
-        # 4-2. Layout Engine + Vision 결과 교차검증/병합
-        verified_modules = _merge_layout_and_vision(layout_data, image_analysis)
+        # 4-1~2. Layout Engine 결과를 직접 사용 (AI 이미지 역분석 제거 — 정확도 향상)
+        # 이유: 생성된 AI 이미지를 다시 Vision으로 분석하면 오차가 누적됨
+        # Layout Engine이 벽면 분석 기반으로 이미 정확한 모듈 배치를 가지고 있음
+        verified_modules = _merge_layout_and_vision(layout_data, None)
 
         # 4-3. 고객 견적 데이터 기반 견적 산출 (ㄱ자/ㄷ자/대면형: 전체 벽면 반영)
         quote_data = calculate_quote(
