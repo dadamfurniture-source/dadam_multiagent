@@ -302,7 +302,16 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     yield {"type": "progress", "content": "layout design started"}
     _update_stage(request.project_id, "design")
 
-    wall_width = space_result.get("wall_dimensions_mm", {}).get("width", 3000)
+    wall_dims = space_result.get("wall_dimensions_mm", {})
+    wall_width = wall_dims.get("width", 3000)
+    wall_layout = space_result.get("wall_layout", "straight")
+    secondary_width = wall_dims.get("secondary_width", 0) or 0
+    tertiary_width = wall_dims.get("tertiary_width", 0) or 0
+    # ㄱ자/ㄷ자/대면형: 전체 길이 합산
+    total_wall_width = wall_width + secondary_width + tertiary_width
+    logger.info("Wall layout: %s, primary=%d, secondary=%d, tertiary=%d, total=%d",
+                wall_layout, wall_width, secondary_width, tertiary_width, total_wall_width)
+
     utilities = space_result.get("utility_positions", {})
     # Claude Vision 출력 키: from_origin_mm (position_mm이 아님)
     water_supply = utilities.get("water_supply", {})
@@ -571,12 +580,15 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         # 4-2. Layout Engine + Vision 결과 교차검증/병합
         verified_modules = _merge_layout_and_vision(layout_data, image_analysis)
 
-        # 4-3. 고객 견적 데이터 기반 견적 산출
+        # 4-3. 고객 견적 데이터 기반 견적 산출 (ㄱ자/ㄷ자/대면형: 전체 벽면 반영)
         quote_data = calculate_quote(
             modules=verified_modules,
             category=request.category,
             wall_width=wall_width,
             grade="basic",
+            wall_layout=wall_layout,
+            secondary_width=secondary_width,
+            tertiary_width=tertiary_width,
         )
 
         client.table("quotes").insert(

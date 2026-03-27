@@ -60,13 +60,20 @@ Detect with confidence levels (high/medium/low):
 
 ### STEP 4: Wall Layout Shape Detection
 Determine the wall configuration for furniture placement:
-- **"straight"**: Single continuous wall (1자). Furniture goes along one wall only.
+- **"straight"**: Single continuous wall (ㅡ자). Furniture goes along one wall only.
 - **"L-shape"**: Two walls meeting at a corner (ㄱ자). Furniture wraps around the corner.
 - **"U-shape"**: Three walls (ㄷ자). Furniture on three sides.
+- **"island"**: Freestanding island kitchen (대면형/아일랜드). Furniture not against wall.
 
 **Important**: Only count walls where furniture will actually be placed.
 A front wall with side walls visible in the photo does NOT automatically make it L-shaped.
 If the main furniture wall is one continuous straight wall, report "straight" even if side walls are visible.
+
+**Dimensions for multi-wall layouts:**
+- `width`: Primary wall width (longest wall with most utilities)
+- `secondary_width`: Second wall width for L-shape/U-shape (0 if straight)
+- `tertiary_width`: Third wall width for U-shape only (0 if not U-shape)
+- For island: `width` = long side, `secondary_width` = short side
 
 ### STEP 5: Obstacle Detection
 Windows, doors, columns, beams — position and dimensions.
@@ -98,8 +105,13 @@ Return ONLY valid JSON:
     "tile_size_mm": {"width": 300, "height": 600},
     "tile_count": {"horizontal": 10, "vertical": 4}
   },
-  "wall_layout": "straight | L-shape | U-shape",
-  "wall_dimensions_mm": {"width": 3000, "height": 2400},
+  "wall_layout": "straight | L-shape | U-shape | island",
+  "wall_dimensions_mm": {
+    "width": 3000,
+    "height": 2400,
+    "secondary_width": 0,
+    "tertiary_width": 0
+  },
   "utility_positions": {
     "water_supply": {
       "detected": true,

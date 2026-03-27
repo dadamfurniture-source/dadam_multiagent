@@ -127,17 +127,23 @@ def calculate_quote(
     grade: str = "basic",
     include_demolition: bool = False,
     discounts: list[str] | None = None,
+    wall_layout: str = "straight",
+    secondary_width: int = 0,
+    tertiary_width: int = 0,
 ) -> dict:
-    """고객 견적서 기반 견적 산출.
+    """고객 견적서 기반 견적 산출 (ㄱ자/ㄷ자/대면형 지원).
 
     Args:
         modules: _merge_layout_and_vision() 결과
         category: 가구 카테고리
-        wall_width: 벽면 폭 (mm)
+        wall_width: 주 벽면 폭 (mm)
         style: 스타일
         grade: "basic" / "mid" / "premium"
         include_demolition: 철거 포함 여부
         discounts: 적용할 할인 코드 리스트
+        wall_layout: "straight" / "L-shape" / "U-shape" / "island"
+        secondary_width: 보조 벽면 폭 (mm), ㄱ자/ㄷ자용
+        tertiary_width: 세 번째 벽면 폭 (mm), ㄷ자용
 
     Returns:
         견적 데이터 dict
@@ -145,7 +151,16 @@ def calculate_quote(
     items = []
     subtotal = 0
 
-    # 1. 하부장
+    # ── 보조 벽면 모듈 자동 생성 (ㄱ자/ㄷ자/대면형) ──
+    extra_walls = []
+    if wall_layout in ("L-shape", "U-shape", "island") and secondary_width > 0:
+        extra_walls.append(("보조벽면", secondary_width))
+    if wall_layout == "U-shape" and tertiary_width > 0:
+        extra_walls.append(("세번째벽면", tertiary_width))
+    if wall_layout == "island" and secondary_width > 0:
+        extra_walls.append(("대면", secondary_width))
+
+    # 1. 하부장 (주 벽면)
     for cab in modules.get("lower_cabinets", []):
         w = cab.get("width_mm", 600)
         price = _calc_cabinet_price(category, w, "lower")
@@ -157,7 +172,18 @@ def calculate_quote(
             "total": price,
         })
 
-    # 2. 상부장
+    # 1-1. 하부장 (보조 벽면) — 너비 비례로 모듈 자동 산출
+    for wall_name, wall_w in extra_walls:
+        price = _calc_cabinet_price(category, wall_w, "lower")
+        subtotal += price
+        items.append({
+            "name": f"하부장 [{wall_name}] {wall_w}mm",
+            "quantity": 1,
+            "unit_price": price,
+            "total": price,
+        })
+
+    # 2. 상부장 (주 벽면)
     for cab in modules.get("upper_cabinets", []):
         w = cab.get("width_mm", 600)
         price = _calc_cabinet_price(category, w, "upper")
@@ -169,15 +195,49 @@ def calculate_quote(
             "total": price,
         })
 
-    # 3. 상판 (per 1000mm, 해당 카테고리만)
+    # 2-1. 상부장 (보조 벽면) — island은 상부장 없음
+    for wall_name, wall_w in extra_walls:
+        if wall_layout == "island":
+            continue  # 대면형은 보조 벽면 상부장 없음
+        price = _calc_cabinet_price(category, wall_w, "upper")
+        subtotal += price
+        items.append({
+            "name": f"상부장 [{wall_name}] {wall_w}mm",
+            "quantity": 1,
+            "unit_price": price,
+            "total": price,
+        })
+
+    # 2-2. 코너 모듈 (ㄱ자/ㄷ자 연결부)
+    corner_count = 0
+    if wall_layout == "L-shape":
+        corner_count = 1
+    elif wall_layout == "U-shape":
+        corner_count = 2
+    if corner_count > 0:
+        corner_price = _calc_cabinet_price(category, 900, "lower")  # 코너 = 900mm 기준
+        corner_total = int(corner_price * 1.2) * corner_count  # 코너 할증 20%
+        subtotal += corner_total
+        items.append({
+            "name": f"코너모듈 (ㄱ자 연결부) × {corner_count}",
+            "quantity": corner_count,
+            "unit_price": int(corner_price * 1.2),
+            "total": corner_total,
+        })
+
+    # 3. 상판 — 전체 벽면 길이 반영 (ㄱ자/ㄷ자/대면형)
     countertop_price = 0
     if category in COUNTERTOP_CATEGORIES:
+        # 주 벽면 + 보조 벽면 전체 길이
         ct_length = modules.get("countertop_length_mm", wall_width)
+        for _, wall_w in extra_walls:
+            ct_length += wall_w
         per_1000 = COUNTERTOP_PRICES.get(grade, COUNTERTOP_PRICES["basic"])
         countertop_price = int(per_1000 * ct_length / 1000)
         subtotal += countertop_price
+        layout_label = {"straight": "일자형", "L-shape": "ㄱ자형", "U-shape": "ㄷ자형", "island": "대면형"}.get(wall_layout, "")
         items.append({
-            "name": f"인조대리석 상판 ({grade})",
+            "name": f"인조대리석 상판 ({grade}) {layout_label} {ct_length}mm",
             "quantity": 1,
             "unit_price": countertop_price,
             "total": countertop_price,
@@ -198,14 +258,27 @@ def calculate_quote(
         })
     subtotal += fixture_total
 
-    # 5. 인건비 — 운반+설치 기본 포함
+    # 5. 인건비 — 운반+설치 (ㄱ자/ㄷ자/대면형 할증)
     install_fee = LABOR["delivery_install"]
+    install_surcharge = 0
+    if wall_layout == "L-shape":
+        install_surcharge = int(install_fee * 0.2)  # ㄱ자 20% 할증
+    elif wall_layout == "U-shape":
+        install_surcharge = int(install_fee * 0.4)  # ㄷ자 40% 할증
+    elif wall_layout == "island":
+        install_surcharge = int(install_fee * 0.3)  # 대면형 30% 할증
+    total_install = install_fee + install_surcharge
+    install_label = "운반+설치"
+    if install_surcharge > 0:
+        layout_name = {"L-shape": "ㄱ자", "U-shape": "ㄷ자", "island": "대면형"}.get(wall_layout, "")
+        install_label = f"운반+설치 ({layout_name} 할증 포함)"
     items.append({
-        "name": "운반+설치",
+        "name": install_label,
         "quantity": 1,
-        "unit_price": install_fee,
-        "total": install_fee,
+        "unit_price": total_install,
+        "total": total_install,
     })
+    install_fee = total_install  # 이후 합산에 반영
 
     demolition_fee = 0
     if include_demolition:
@@ -254,6 +327,12 @@ def calculate_quote(
         "vat": vat,
         "total": total,
         "grade": grade,
+        "wall_layout": wall_layout,
+        "wall_widths": {
+            "primary": wall_width,
+            "secondary": secondary_width,
+            "tertiary": tertiary_width,
+        },
     }
 
 
