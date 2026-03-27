@@ -104,6 +104,7 @@ async def _correction_pass(
         "exactly 2 equal-height horizontal pull-out drawer panels. "
         "Each drawer is a flat panel matching the cabinet color, "
         "with a thin finger groove along the top edge. "
+        "NEVER move the sink or cooktop. Keep them in their original positions. "
         "Keep the same camera angle, perspective, and vanishing point. "
         "Keep everything else identical. Clean floor."
     )
@@ -382,6 +383,14 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         else:
             module_sentences.append(f"At {pct}% from left: {mw}mm cabinet with 1 door")
     module_desc = ". ".join(module_sentences) + "."
+    # 개수대/쿡탑 위치 교환 방지 강화
+    sink_pct = next((int(m.get("position_x", 0) / wall_width * 100) for m in _modules if m.get("type") == "sink_bowl"), None)
+    cook_pct = next((int(m.get("position_x", 0) / wall_width * 100) for m in _modules if m.get("type") == "cooktop"), None)
+    if sink_pct is not None and cook_pct is not None:
+        if sink_pct < cook_pct:
+            module_desc += f" IMPORTANT: Sink is on the LEFT side ({sink_pct}%), cooktop is on the RIGHT side ({cook_pct}%). Do NOT swap them."
+        else:
+            module_desc += f" IMPORTANT: Cooktop is on the LEFT side ({cook_pct}%), sink is on the RIGHT side ({sink_pct}%). Do NOT swap them."
 
     # 벽 형태
     wall_layout = space_result.get("wall_layout", "straight")
