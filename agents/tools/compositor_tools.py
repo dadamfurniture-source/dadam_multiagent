@@ -61,9 +61,16 @@ async def generate_closed_door(
 
     module_instruction = f"{module_desc} " if module_desc else ""
 
+    logger.info("Selected cabinet color: %s", style_label)
+
     prompt = (
-        f"Edit this photo: remove people, tools, debris. "
-        f"Keep existing wall tiles, backsplash, ceiling exactly. "
+        f"Edit this photo: remove people, tools, construction equipment, debris. "
+        f"If the room is under construction: "
+        f"replace cement/concrete floor with wood laminate flooring, "
+        f"apply clean white wallpaper to exposed ceiling and bare wood surfaces, "
+        f"fill ceiling holes with recessed LED downlights, "
+        f"make the space look like a finished modern Korean apartment. "
+        f"Keep existing wall tiles and backsplash exactly. "
         f"Install {style_label} {category}. "
         f"Handleless flat panel doors with finger groove along top edge. "
         f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
@@ -74,7 +81,7 @@ async def generate_closed_door(
         f"Sink faucet must be directly above the water pipe visible in the original photo. "
         f"Cooktop must be flush-mounted built-in (completely flat, embedded into countertop). "
         f"Cooktop cabinet: exactly 2 stacked flat drawer panels below. {placement_note}"
-        f"Clean floor."
+        f"Clean finished floor."
     )
 
     if len(prompt) > 1500:

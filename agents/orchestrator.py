@@ -501,21 +501,21 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             furniture_b64 = None
             open_b64 = None
 
-    # ── 3b. Fallback: Gemini-only pipeline (existing code, preserved 100%) ──
+    # ── 3b. Fallback: Gemini-only pipeline ──
     if not furniture_b64:
-        style_short = {
-            "modern": "white flat-panel",
-            "nordic": "light wood grain",
-            "classic": "warm brown wood panel",
-            "natural": "natural wood matte",
-            "industrial": "dark charcoal matte",
-            "luxury": "high-gloss pearl white",
-        }.get(style, "white flat-panel")
+        from agents.tools.compositor_tools import _get_neutral_style
+        style_short = _get_neutral_style()  # 랜덤 무채색
+        logger.info("Fallback cabinet color: %s", style_short)
 
         furniture_prompt = (
-            f"Edit this photo: remove people, tools, debris. "
+            f"Edit this photo: remove people, tools, construction equipment, debris. "
+            f"If the room is under construction: "
+            f"replace cement/concrete floor with wood laminate flooring, "
+            f"apply clean white wallpaper to exposed ceiling and bare wood surfaces, "
+            f"fill ceiling holes with recessed LED downlights, "
+            f"make the space look like a finished modern Korean apartment. "
             f"Keep the same camera angle, perspective, vanishing point, and eye level. "
-            f"Keep the existing wall tiles, backsplash, ceiling, windows exactly. "
+            f"Keep the existing wall tiles, backsplash, windows exactly. "
             f"Install {layout_desc}{style_short} kitchen cabinets on the wall. "
             f"Handleless flat panel doors with finger groove along top edge. "
             f"Upper cabinets flush with ceiling. Lower cabinets with countertop. "
