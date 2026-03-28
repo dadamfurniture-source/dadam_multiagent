@@ -161,13 +161,6 @@ async def render_cabinet_scene(
         with open(output_path, "rb") as f:
             png_bytes = f.read()
 
-        # SINK/COOKTOP 위치 라벨 오버레이
-        png_bytes = _add_position_labels(
-            png_bytes,
-            scene_config["modules"],
-            scene_config["wall_width"],
-        )
-
         b64 = base64.b64encode(png_bytes).decode()
         logger.info("Blender render complete: %d bytes [%s]", len(png_bytes), run_id)
         return b64

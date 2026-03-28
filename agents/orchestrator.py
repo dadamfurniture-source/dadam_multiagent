@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
-from agents.tools.compositor_tools import generate_closed_door, generate_open_door
+from agents.tools.compositor_tools import generate_closed_door
 from agents.tools.image_tools import (
     _call_gemini_image,
     _call_gemini_vision,
@@ -419,12 +419,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         pct = int(mx / wall_width * 100) if wall_width > 0 else 0
         if mtype == "sink_bowl":
             module_sentences.append(
-                f"At {pct}% from left: {mw}mm sink cabinet with rectangular stainless steel sink bowl "
-                f"and tall gooseneck faucet — faucet must be directly above the water pipe"
+                f"At {pct}% from left: {mw}mm sink cabinet with brand new stainless steel sink bowl "
+                f"and brand new tall gooseneck faucet"
             )
         elif mtype == "cooktop":
             module_sentences.append(
-                f"At {pct}% from left: {mw}mm flush-mounted built-in cooktop (completely flat, embedded into countertop) "
+                f"At {pct}% from left: {mw}mm flush-mounted built-in cooktop (brand new, completely flat, embedded into countertop) "
                 f"with exactly 2 drawers below"
             )
         elif m.get("is_2door"):
