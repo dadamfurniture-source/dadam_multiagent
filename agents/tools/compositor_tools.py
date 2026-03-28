@@ -54,9 +54,9 @@ async def generate_closed_door(
         f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
         f"{module_instruction}"
         f"2nd image = 3D layout guide, copy positions exactly. "
-        f"CRITICAL: sink bowl and cooktop positions must match the layout guide exactly. "
-        f"NEVER swap sink and cooktop positions. Sink stays where water pipes are, cooktop stays where exhaust duct is. "
-        f"Cooktop: exactly 2 stacked flat drawer panels. {placement_note}"
+        f"Sink faucet must be placed directly above the water pipe position visible in the original photo. "
+        f"Cooktop must be a flush-mounted built-in type (completely flat, embedded into the countertop surface, no protruding edges). "
+        f"Cooktop cabinet: exactly 2 stacked flat drawer panels below. {placement_note}"
         f"Clean floor."
     )
 
@@ -89,8 +89,7 @@ async def generate_open_door(
     prompt = (
         f"Edit this photo: open all cabinet doors 90deg outward, pull drawers 40% forward. "
         f"2nd image = open layout guide. Inside: {open_contents}. "
-        f"Keep the same cabinet structure, color, countertop. "
-        f"NEVER move or swap sink bowl and cooktop positions — they must stay in the exact same location. "
+        f"Keep the same cabinet structure, color, countertop, sink faucet position, cooktop position. "
         f"Doors and drawers are handleless flat panels with finger groove along top edge. "
         f"Keep walls, tiles, floor, ceiling, perspective identical."
     )
