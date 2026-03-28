@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import AsyncGenerator
 
 from agents.layout_engine import OPEN_DOOR_CONTENTS, plan_layout
-from agents.tools.compositor_tools import generate_closed_door, generate_open_door
+from agents.tools.compositor_tools import generate_closed_door, generate_open_door, inpaint_sink_and_cooktop
 from agents.tools.image_tools import (
     _call_gemini_image,
     _call_gemini_vision,
@@ -483,7 +483,17 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender-guided furniture generation complete")
 
-            # Pass 2: 보정 (쿡탑 서랍 + 바닥 잔해)
+            # Pass 2: 싱크볼/쿡탑 분리 인페인팅 (위치 고정)
+            if request.category == "sink":
+                try:
+                    furniture_b64 = await inpaint_sink_and_cooktop(
+                        furniture_b64, _modules, wall_width
+                    )
+                    logger.info("Sink/cooktop inpainting complete")
+                except Exception as e2:
+                    logger.warning("Sink/cooktop inpainting failed: %s", e2)
+
+            # Pass 3: 보정 (쿡탑 서랍 + 바닥 잔해)
             if request.category == "sink":
                 try:
                     furniture_b64 = await _correction_pass(
@@ -535,13 +545,23 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Furniture generated via Gemini (pass 1)")
 
-            # Pass 2: 보정 (쿡탑 서랍 + 바닥 잔해)
+            # Pass 2: 싱크볼/쿡탑 분리 인페인팅 (위치 고정)
+            if request.category == "sink":
+                try:
+                    furniture_b64 = await inpaint_sink_and_cooktop(
+                        furniture_b64, _modules, wall_width
+                    )
+                    logger.info("Sink/cooktop inpainting complete (pass 2)")
+                except Exception as e2:
+                    logger.warning("Sink/cooktop inpainting failed: %s", e2)
+
+            # Pass 3: 보정 (쿡탑 서랍 + 바닥 잔해)
             if request.category == "sink":
                 try:
                     furniture_b64 = await _correction_pass(
                         furniture_b64, request.category, ref_images=ref_images
                     )
-                    logger.info("Correction pass complete (pass 2)")
+                    logger.info("Correction pass complete (pass 3)")
                 except Exception as e2:
                     logger.warning("Correction pass failed: %s", e2)
 

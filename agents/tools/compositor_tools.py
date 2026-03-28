@@ -68,11 +68,8 @@ async def generate_closed_door(
         f"Handleless flat panel doors with finger groove along top edge. "
         f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
         f"{module_instruction}"
-        f"2nd image = 3D layout guide with SINK and COOKTOP labels. "
-        f"Place sink bowl exactly where the blue SINK label is in the guide. "
-        f"Place cooktop exactly where the red COOKTOP label is in the guide. "
-        f"Sink faucet must be directly above the water pipe visible in the original photo. "
-        f"Cooktop must be flush-mounted built-in (completely flat, embedded into countertop). "
+        f"2nd image = 3D layout guide, copy positions exactly. "
+        f"Leave countertop surface plain where sink and cooktop will go (no sink bowl, no cooktop yet). "
         f"Cooktop cabinet: exactly 2 stacked flat drawer panels below. {placement_note}"
         f"Clean floor."
     )
@@ -136,3 +133,71 @@ async def composite_render_onto_photo(
         reference_images=reference_images,
         wall_width=wall_width,
     )
+
+
+async def inpaint_sink_and_cooktop(
+    furniture_b64: str,
+    modules: list,
+    wall_width: int,
+) -> str:
+    """싱크볼/쿡탑을 정확한 위치에 분리 인페인팅.
+
+    Step 1: 싱크 영역 마스크 → 싱크볼+수전 인페인팅
+    Step 2: 쿡탑 영역 마스크 → 매립형 쿡탑 인페인팅
+
+    마스크로 영역을 지정하므로 위치를 바꿀 수 없음.
+    """
+    import base64 as b64mod
+    import io
+    from PIL import Image, ImageDraw
+
+    img_bytes = b64mod.b64decode(furniture_b64)
+    result_b64 = furniture_b64
+
+    img = Image.open(io.BytesIO(img_bytes))
+    w, h = img.size
+
+    for m in modules:
+        mtype = m.get("type", "")
+        if mtype not in ("sink_bowl", "cooktop"):
+            continue
+
+        mx = m.get("position_x", 0)
+        mw = m.get("width", 600)
+
+        # 모듈의 이미지 좌표 계산 (wall_width → 이미지 너비 비례)
+        left_pct = mx / wall_width if wall_width > 0 else 0
+        right_pct = (mx + mw) / wall_width if wall_width > 0 else 1
+        # 상판 영역 (이미지 높이 38~48% 지점 — 상판 표면)
+        mask_left = int(left_pct * w) + 10
+        mask_right = int(right_pct * w) - 10
+        mask_top = int(h * 0.38)
+        mask_bottom = int(h * 0.48)
+
+        # 마스킹 (흰색)
+        cur_img = Image.open(io.BytesIO(b64mod.b64decode(result_b64)))
+        draw = ImageDraw.Draw(cur_img)
+        draw.rectangle([mask_left, mask_top, mask_right, mask_bottom], fill=(255, 255, 255))
+
+        buf = io.BytesIO()
+        cur_img.save(buf, format="PNG")
+        masked_b64 = b64mod.b64encode(buf.getvalue()).decode()
+
+        # 인페인팅 프롬프트
+        if mtype == "sink_bowl":
+            inpaint_prompt = (
+                "Fill the white area with a rectangular stainless steel sink bowl "
+                "embedded in the countertop, with a tall gooseneck faucet. "
+                "Keep everything else identical."
+            )
+        else:
+            inpaint_prompt = (
+                "Fill the white area with a flush-mounted built-in cooktop "
+                "(completely flat black glass surface embedded in the countertop, no protruding edges). "
+                "Keep everything else identical."
+            )
+
+        logger.info("Inpainting %s at %d%%-%d%%", mtype, int(left_pct*100), int(right_pct*100))
+        result_b64 = await _call_gemini_image(inpaint_prompt, masked_b64)
+
+    return result_b64
