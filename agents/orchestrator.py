@@ -34,26 +34,28 @@ logger = logging.getLogger(__name__)
 STYLE_GUIDE = {
     "modern": (
         "flat solid color finish, NO wood grain texture. "
-        "Colors: white, sand gray, fog gray, or milk white. "
-        "Glass doors with aluminum frames (black nickel frame with bronze glass, or silver frame with sky blue glass)."
+        "Colors: sand gray, fog gray, milk white, cashmere, or ivory (NO black). "
+        "Neutral matte tones only."
     ),
     "nordic": (
-        "light natural wood grain finish with warm Scandinavian tones. "
-        "Glass doors with aluminum frames (silver frame with sky blue glass)."
+        "flat solid color finish in warm neutral tones. "
+        "Colors: milk white, sand gray, warm gray (NO black). Matte finish."
     ),
     "classic": (
-        "elegant traditional wood panel finish with warm brown tones. Brass or gold-tone handles."
+        "flat solid color finish in warm neutral tones. "
+        "Colors: cashmere, ivory white, fog gray (NO black). Matte finish."
     ),
     "natural": (
-        "natural wood grain finish with organic earth tones. Matte finish, minimal hardware."
+        "flat solid color finish in soft neutral tones. "
+        "Colors: warm gray, sand gray, milk white (NO black). Matte finish."
     ),
     "industrial": (
-        "dark matte finish with metal accents. "
-        "Colors: charcoal, dark gray, black. Metal frame glass doors."
+        "flat solid color finish in cool neutral tones. "
+        "Colors: fog gray, sand gray, cashmere (NO black). Matte finish."
     ),
     "luxury": (
-        "high-gloss lacquer finish in premium colors. "
-        "Colors: champagne gold, pearl white, deep navy. Gold-tone hardware."
+        "flat solid color finish in premium neutral tones. "
+        "Colors: cashmere, ivory white, milk white (NO black). Matte finish."
     ),
 }
 
@@ -577,32 +579,35 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
 
     # 3c. 다른 스타일 이미지 추가 생성
     if furniture_b64:
-        # 현재 스타일과 다른 스타일 선택
-        ALT_STYLE_MAP = {
-            "modern": ("nordic", "light wood grain"),
-            "nordic": ("modern", "white flat-panel"),
-            "classic": ("natural", "natural wood matte"),
-            "natural": ("classic", "warm brown wood panel"),
-            "industrial": ("modern", "white flat-panel"),
-            "luxury": ("modern", "white flat-panel"),
-        }
-        alt_style_key, alt_style_short = ALT_STYLE_MAP.get(style, ("nordic", "light wood grain"))
+        # 대체 스타일: 하부장 컬러 + 상부장 무채색 분리
+        import random
+        ALT_LOWER_COLORS = [
+            "deep green", "deep blue", "nature oak wood grain",
+            "walnut wood grain", "ceramic gray", "concrete gray",
+        ]
+        ALT_UPPER_NEUTRALS = [
+            "milk white", "fog gray", "sand gray", "cashmere", "ivory white",
+        ]
+        alt_lower = random.choice(ALT_LOWER_COLORS)
+        alt_upper = random.choice(ALT_UPPER_NEUTRALS)
+        alt_style_key = "alt_color"
 
         try:
             alt_prompt = (
-                f"Edit this photo: change all cabinet door and drawer colors/material to {alt_style_short}. "
+                f"Edit this photo: change LOWER cabinet doors and drawers to {alt_lower} flat-panel finish. "
+                f"Change UPPER cabinet doors to {alt_upper} flat-panel finish. "
+                f"Lower and upper cabinets must have DIFFERENT colors (two-tone style). "
                 f"Keep the exact same cabinet structure, layout, positions, sink bowl, cooktop. "
                 f"Handleless flat panels with finger groove along top edge. "
                 f"Keep the same camera angle, perspective, vanishing point. "
                 f"Keep walls, tiles, floor, ceiling identical."
             )
-            # Alt 스타일 참고 이미지 조회
-            alt_refs = await _fetch_reference_images(request.category, alt_style_key)
+            alt_refs = await _fetch_reference_images(request.category, style)
             alt_b64 = await _call_gemini_image(
                 alt_prompt, furniture_b64, extra_images=alt_refs or None
             )
             await _upload_image(request.project_id, request.user_id, alt_b64, "alt_style")
-            logger.info("Alt style (%s) image generated", alt_style_key)
+            logger.info("Alt style generated: lower=%s, upper=%s", alt_lower, alt_upper)
         except Exception as e:
             logger.warning("Alt style generation failed: %s", e)
 
