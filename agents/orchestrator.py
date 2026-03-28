@@ -408,7 +408,6 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     _update_stage(request.project_id, "image_gen")
 
     category_name = CATEGORIES_EN.get(request.category, request.category)
-    STYLE_GUIDE.get(style, STYLE_GUIDE["modern"])
     # 모듈별 자연어 설명
     _modules = layout_data.get("modules", [])
     module_sentences = []
@@ -446,10 +445,11 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     furniture_b64 = None
     open_b64 = None
 
-    # ── 2.5 참고 이미지 조회 (category + style 매칭) ──
-    ref_images = await _fetch_reference_images(request.category, style)
-    if ref_images:
-        logger.info("Found %d reference images for %s/%s", len(ref_images), request.category, style)
+    # ── 2.5 참고 이미지 비활성화 ──
+    # 참고 이미지가 색상을 고정시키는 문제로 비활성화 (랜덤 색상 적용을 위해)
+    # Gemini가 텍스트 프롬프트보다 참고 이미지 색상을 더 강하게 따르기 때문
+    ref_images = None
+    logger.info("Reference images disabled for random color generation")
 
     # ── 3a. Blender 3D Rendering Pipeline ──
     use_blender = os.environ.get("USE_BLENDER", "true").lower() == "true"
