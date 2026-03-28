@@ -18,6 +18,69 @@ logger = logging.getLogger(__name__)
 SCENE_BUILDER_SCRIPT = os.path.join(os.path.dirname(__file__), "scene_builder.py")
 
 
+def _add_position_labels(png_bytes: bytes, modules: list, wall_width: int) -> bytes:
+    """3D 렌더 이미지에 SINK/COOKTOP 위치 라벨 오버레이.
+
+    Gemini가 3D 가이드를 참조할 때 위치를 혼동하지 않도록 텍스트 라벨 추가.
+    """
+    try:
+        import io
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        draw = ImageDraw.Draw(img)
+        w, h = img.size
+
+        # 폰트 (시스템 기본, 없으면 PIL 기본)
+        try:
+            font = ImageFont.truetype("arial.ttf", 28)
+            font_sm = ImageFont.truetype("arial.ttf", 20)
+        except Exception:
+            font = ImageFont.load_default()
+            font_sm = font
+
+        for m in modules:
+            mtype = m.get("type", "")
+            mx = m.get("position_x", 0)
+            mw = m.get("width", 600)
+            if mtype not in ("sink_bowl", "cooktop"):
+                continue
+
+            # 모듈 중심의 이미지 X 좌표 (wall_width → 이미지 너비 비례)
+            center_pct = (mx + mw / 2) / wall_width if wall_width > 0 else 0.5
+            img_x = int(center_pct * w)
+            # 상판 위 라벨 위치 (이미지 높이 45% 지점)
+            img_y = int(h * 0.45)
+
+            if mtype == "sink_bowl":
+                label = "◀ SINK ▶"
+                color = (30, 120, 255, 220)  # 파란색
+                bg = (30, 120, 255, 80)
+            else:
+                label = "◀ COOKTOP ▶"
+                color = (255, 80, 30, 220)  # 빨간색
+                bg = (255, 80, 30, 80)
+
+            # 배경 박스
+            bbox = draw.textbbox((0, 0), label, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            pad = 6
+            x1 = img_x - tw // 2 - pad
+            y1 = img_y - th // 2 - pad
+            x2 = img_x + tw // 2 + pad
+            y2 = img_y + th // 2 + pad
+            draw.rectangle([x1, y1, x2, y2], fill=bg)
+            # 텍스트
+            draw.text((img_x - tw // 2, img_y - th // 2), label, fill=color, font=font)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as e:
+        logger.warning("Label overlay failed: %s", e)
+        return png_bytes  # 실패 시 원본 반환
+
+
 async def render_cabinet_scene(
     layout_data: dict,
     camera_params: dict,
@@ -97,6 +160,13 @@ async def render_cabinet_scene(
 
         with open(output_path, "rb") as f:
             png_bytes = f.read()
+
+        # SINK/COOKTOP 위치 라벨 오버레이
+        png_bytes = _add_position_labels(
+            png_bytes,
+            scene_config["modules"],
+            scene_config["wall_width"],
+        )
 
         b64 = base64.b64encode(png_bytes).decode()
         logger.info("Blender render complete: %d bytes [%s]", len(png_bytes), run_id)
