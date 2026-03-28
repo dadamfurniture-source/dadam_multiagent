@@ -36,6 +36,7 @@ async def create_project(
     style: str | None = Form(None),
     budget: int | None = Form(None),
     notes: str | None = Form(None),
+    layout_constraints: str | None = Form(None),
     user: CurrentUser = Depends(get_current_user),
 ):
     """새 프로젝트 생성 + AI 파이프라인 시작"""
@@ -99,7 +100,7 @@ async def create_project(
                 "category": category,
                 "style": style,
                 "budget": budget,
-                "notes": notes,
+                "notes": notes or (layout_constraints if layout_constraints else None),
             }
         )
         .execute()

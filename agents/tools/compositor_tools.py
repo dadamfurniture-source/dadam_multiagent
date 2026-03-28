@@ -37,7 +37,11 @@ STYLE_SHORT = {
     "luxury": None,
 }
 
-def _get_neutral_style() -> str:
+def _get_neutral_style(seed: str | None = None) -> str:
+    """무채색 랜덤 선택. seed가 있으면 같은 디자인에서 같은 색 재현."""
+    if seed:
+        rng = random.Random(seed)
+        return rng.choice(_NEUTRAL_COLORS)
     return random.choice(_NEUTRAL_COLORS)
 
 
@@ -51,13 +55,14 @@ async def generate_closed_door(
     wall_width: int = 0,
     module_count: int = 0,
     module_desc: str = "",
+    design_seed: str | None = None,
 ) -> str:
     """Generate closed-door furniture image using 3D render as layout guide."""
     extra = [render_b64]
     if reference_images:
         extra.extend(reference_images[:1])
 
-    style_label = STYLE_SHORT.get(style) or _get_neutral_style()
+    style_label = STYLE_SHORT.get(style) or _get_neutral_style(seed=design_seed)
 
     module_instruction = f"{module_desc} " if module_desc else ""
 

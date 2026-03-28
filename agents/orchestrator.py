@@ -469,6 +469,16 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             )
             logger.info("Blender closed-door render complete")
 
+            # design_seed 추출 (layout_constraints.design_id 또는 project_id)
+            _design_seed = request.project_id
+            try:
+                if request.notes:
+                    _lc = json.loads(request.notes)
+                    if isinstance(_lc, dict) and _lc.get("design_id"):
+                        _design_seed = str(_lc["design_id"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
             # ── Blender + Gemini compositor ──
             furniture_b64 = await generate_closed_door(
                 original_b64=image_b64,
@@ -480,6 +490,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
                 wall_width=wall_width,
                 module_count=len(_modules),
                 module_desc=module_desc,
+                design_seed=_design_seed,
             )
             logger.info("Blender-guided furniture generation complete")
 
@@ -504,7 +515,7 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
     # ── 3b. Fallback: Gemini-only pipeline ──
     if not furniture_b64:
         from agents.tools.compositor_tools import _get_neutral_style
-        style_short = _get_neutral_style()  # 랜덤 무채색
+        style_short = _get_neutral_style(seed=request.project_id)  # seeded 랜덤 무채색
         logger.info("Fallback cabinet color: %s", style_short)
 
         furniture_prompt = (
