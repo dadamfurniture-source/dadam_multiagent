@@ -68,8 +68,11 @@ async def generate_closed_door(
         f"Handleless flat panel doors with finger groove along top edge. "
         f"Upper cabinets flush ceiling, lower cabinets with countertop, full wall edge-to-edge. "
         f"{module_instruction}"
-        f"2nd image = 3D layout guide, copy positions exactly. "
-        f"Leave countertop surface plain where sink and cooktop will go (no sink bowl, no cooktop yet). "
+        f"2nd image = 3D layout guide with SINK and COOKTOP labels. "
+        f"Place sink bowl exactly where the blue SINK label is in the guide. "
+        f"Place cooktop exactly where the red COOKTOP label is in the guide. "
+        f"Sink faucet must be directly above the water pipe visible in the original photo. "
+        f"Cooktop must be flush-mounted built-in (completely flat, embedded into countertop). "
         f"Cooktop cabinet: exactly 2 stacked flat drawer panels below. {placement_note}"
         f"Clean floor."
     )

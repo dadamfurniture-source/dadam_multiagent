@@ -50,24 +50,37 @@ Fallback references (when no tiles visible):
 ### STEP 3: Utility Detection
 Detect with confidence levels (high/medium/low):
 
-**Water Supply Pipes / Distributor:**
+**Water Supply Pipes / Distributor (수전 배관):**
 - Red/blue pipes (hot/cold water)
 - White/beige manifold box (분배기) with valves
 - Floor-mounted water pipe stubs or existing sink drain hole
+- Chrome angle valves (앵글밸브) on wall
+- Flexible braided hoses connected to wall
 - Location: lower wall or floor, 0-500mm from floor
 - Also check: existing sink position (if old sink is still installed)
+- If pipes are partially hidden or unclear, report confidence "medium" and best estimate
 - → Sink cabinet (1000mm wide) with rectangular stainless steel bowl MUST be centered at this position
 
-**Exhaust Duct:**
+**Exhaust Duct (배기구):**
 - Flexible aluminum/silver duct pipe
-- Circular or rectangular wall opening
+- Circular or rectangular wall opening (often painted over or covered)
+- Existing range hood position (if hood is still installed)
 - Location: upper wall, 1800-2200mm from floor
+- If duct is hidden behind ceiling panel, check for ceiling cutout or existing hood position
 - → Range hood and cooktop MUST be placed here
 
-**Gas Pipe:**
+**Gas Pipe (가스 배관):**
 - Yellow-painted metal pipe with gas valve
-- Location: mid-lower wall
+- Sometimes gray/silver colored gas pipe
+- Gas valve handle (lever type)
+- Location: mid-lower wall, often near exhaust duct position
 - → Gas cooktop connection point
+
+**IMPORTANT: If utilities are hard to identify:**
+- Look for ANY pipe-like objects, valves, or wall penetrations
+- Old sink/cooktop positions indicate where pipes are behind the wall
+- Water pipes are ALWAYS in the lower portion, exhaust is ALWAYS upper
+- Set confidence to "low" but still provide your best position estimate
 
 **Electrical Outlets:**
 - White plastic outlets
