@@ -1,16 +1,56 @@
-"""벽면 측정 정확도 개선 — 듀얼 모델 교차 검증 + 원근 보정.
+"""벽면 측정 정확도 개선 — 듀얼 모델 교차 검증 + 원근 보정 + 이미지 리사이즈.
 
 Phase 2 구현:
+- resize_image_b64(): 이미지를 1024px로 리사이즈 (Vision API 토큰 75% 절감)
 - analyze_space_validated(): Claude + Gemini 병렬 실행 → 수치 confidence
 - correct_for_perspective(): camera_params 기반 원근 왜곡 보정
-- refine_utility_position(): 배관 영역 크롭 정밀 분석
 """
 
 import asyncio
+import base64
+import io
 import logging
 import math
 
 logger = logging.getLogger(__name__)
+
+# Vision API용 최대 이미지 크기 (토큰 비용 절감)
+VISION_MAX_SIZE = 1024
+
+
+def resize_image_b64(image_b64: str, max_size: int = VISION_MAX_SIZE) -> str:
+    """이미지를 max_size px로 리사이즈 (큰 변만 기준, 비율 유지).
+
+    원본이 max_size 이하면 그대로 반환.
+    """
+    try:
+        from PIL import Image
+
+        img_bytes = base64.b64decode(image_b64)
+        img = Image.open(io.BytesIO(img_bytes))
+        w, h = img.size
+
+        if max(w, h) <= max_size:
+            return image_b64  # 이미 작음
+
+        if w >= h:
+            new_w = max_size
+            new_h = int(h * max_size / w)
+        else:
+            new_h = max_size
+            new_w = int(w * max_size / h)
+
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        resized_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        logger.info("Image resized: %dx%d → %dx%d (%.0f%% token reduction)",
+                     w, h, new_w, new_h, (1 - (new_w * new_h) / (w * h)) * 100)
+        return resized_b64
+    except Exception as e:
+        logger.warning("Image resize failed, using original: %s", e)
+        return image_b64
 
 
 # ─── 2-1. 듀얼 모델 교차 검증 ───
@@ -28,9 +68,14 @@ async def analyze_space_validated(
     from agents.tools.image_tools import _call_gemini_vision
     from agents.tools.vision_tools import _call_claude_vision
 
+    # Vision 비용 절감: 1024px로 리사이즈 (토큰 75% 절감)
+    resized_b64 = resize_image_b64(image_b64)
+    # 리사이즈 시 JPEG로 변환되므로 media_type 업데이트
+    resized_media = "image/jpeg" if resized_b64 != image_b64 else media_type
+
     # 병렬 실행
-    claude_task = _call_claude_vision(image_b64, prompt, media_type)
-    gemini_task = _call_gemini_vision(image_b64, prompt, media_type)
+    claude_task = _call_claude_vision(resized_b64, prompt, resized_media)
+    gemini_task = _call_gemini_vision(resized_b64, prompt, resized_media)
 
     results = await asyncio.gather(claude_task, gemini_task, return_exceptions=True)
     claude_result = results[0] if not isinstance(results[0], Exception) else None
