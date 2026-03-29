@@ -19,7 +19,7 @@ from agents.tools.image_tools import (
     _create_furniture_mask,
     cleanup_photo,
 )
-from agents.tools.vision_tools import _call_claude_vision
+# Claude Vision은 fixture vision에서만 사용 (벽면 분석은 Gemini 단독)
 from agents.tools.pricing_tools import (
     _merge_layout_and_vision,
     calculate_quote,
@@ -103,16 +103,16 @@ async def _correction_pass(
 
     # 2. 마스킹된 이미지에 서랍 2단 채우기 (참고 사진으로 스타일 가이드)
     correction_prompt = (
-        "Edit this photo. Fill the white blank area below the cooktop with "
+        "[EDIT MODE] Edit the first image.\n"
+        "[PLATE LOCK] Keep exact same camera, perspective, background.\n"
+        "[WALL TILE LOCK] Keep wall tile identical.\n"
+        "Fill the white blank area below cooktop with "
         "exactly 2 equal-height horizontal pull-out drawer panels. "
-        "Each drawer is a flat panel matching the cabinet color, "
-        "with a thin finger groove along the top edge. "
-        "Cooktop must remain flush-mounted built-in (flat, embedded in countertop). "
-        "Keep the same camera angle, perspective, and vanishing point. "
-        "Keep everything else identical. Clean floor."
+        "Flat panel matching cabinet color, finger groove along top edge. "
+        "Cooktop remains flush-mounted built-in. Clean floor."
     )
 
-    return await _call_gemini_image(correction_prompt, masked_b64, extra_images=ref_images)
+    return await _call_gemini_image(correction_prompt, masked_b64)
 
 
 async def _fetch_reference_images(category: str, style: str, limit: int = 2) -> list[str]:
@@ -261,10 +261,9 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
         yield {"type": "error", "error": f"이미지 다운로드 실패: {e}"}
         return
 
-    measurement_confidence = 0.5  # 기본 신뢰도
+    measurement_confidence = 0.7
     try:
         from agents.prompts import SPACE_ANALYST_PROMPT
-        from agents.tools.measurement_tools import analyze_space_validated, correct_for_perspective
 
         analysis_prompt = (
             f"{SPACE_ANALYST_PROMPT}\n\n"
@@ -272,22 +271,12 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             f"Category: {request.category}\n"
             f"Analyze this photo and return the JSON output as specified above."
         )
-        # 듀얼 모델 교차 검증 (Claude Sonnet 4 + Gemini Flash 병렬)
-        space_result, measurement_confidence = await analyze_space_validated(
-            image_b64, analysis_prompt, media_type
-        )
+        # Gemini Flash 단독 벽면 분석 (비용 절감: $0.05 vs 듀얼 $0.45)
+        space_result = await _call_gemini_vision(image_b64, analysis_prompt, media_type)
         logger.info(
-            "Space analysis complete (confidence=%.2f): %s",
-            measurement_confidence,
+            "Space analysis complete: %s",
             json.dumps(space_result, ensure_ascii=False)[:200],
         )
-
-        # 원근 보정 (camera_params 활용)
-        camera_params = space_result.get("camera_params", {})
-        if camera_params and "wall_dimensions_mm" in space_result:
-            raw_width = space_result["wall_dimensions_mm"].get("width", 0)
-            corrected = correct_for_perspective(raw_width, camera_params)
-            space_result["wall_dimensions_mm"]["width"] = corrected
     except Exception as e:
         logger.error("Space analysis failed: %s", e)
         space_result = {
@@ -512,28 +501,13 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             furniture_b64 = None
             open_b64 = None
 
-    # ── 3b. Fallback: Gemini-only pipeline ──
+    # ── 3b. Fallback: Gemini-only pipeline (태그 기반) ──
     if not furniture_b64:
-        from agents.tools.compositor_tools import _get_neutral_style
-        style_short = _get_neutral_style(seed=request.project_id)  # seeded 랜덤 무채색
-        logger.info("Fallback cabinet color: %s", style_short)
+        from agents.tools.compositor_tools import pick_color_scheme, _build_closed_prompt
+        fb_colors = pick_color_scheme(seed=request.project_id)
+        logger.info("Fallback color: %s", fb_colors["upper"]["name_ko"])
 
-        furniture_prompt = (
-            f"Edit this photo: remove people, tools, construction equipment, debris. "
-            f"If the room is under construction: "
-            f"replace cement/concrete floor with wood laminate flooring, "
-            f"apply clean white wallpaper to exposed ceiling and bare wood surfaces, "
-            f"fill ceiling holes with recessed LED downlights, "
-            f"make the space look like a finished modern Korean apartment. "
-            f"Keep the same camera angle, perspective, vanishing point, and eye level. "
-            f"Keep the existing wall tiles, backsplash, windows exactly. "
-            f"Install {layout_desc}{style_short} kitchen cabinets on the wall. "
-            f"Handleless flat panel doors with finger groove along top edge. "
-            f"Upper cabinets flush with ceiling. Lower cabinets with countertop. "
-            f"Cabinets span full wall, left edge to right edge. "
-            f"{module_desc} "
-            f"Clean floor."
-        )
+        furniture_prompt = _build_closed_prompt(fb_colors, module_desc)
         if len(furniture_prompt) > 1500:
             furniture_prompt = furniture_prompt[:1497] + "..."
         logger.info(
@@ -588,37 +562,27 @@ async def process_project(request: ProjectRequest) -> AsyncGenerator[dict, None]
             except Exception as e:
                 logger.error("Furniture generation failed (all methods): %s", e)
 
-    # 3c. 다른 스타일 이미지 추가 생성
+    # 3c. 대체 스타일 (투톤: 하부 컬러 + 상부 무채색)
     if furniture_b64:
-        # 대체 스타일: 하부장 컬러 + 상부장 무채색 분리
-        import random
-        ALT_LOWER_COLORS = [
-            "deep green", "deep blue", "nature oak wood grain",
-            "walnut wood grain", "ceramic gray", "concrete gray",
-        ]
-        ALT_UPPER_NEUTRALS = [
-            "milk white", "fog gray", "sand gray", "cashmere", "ivory white",
-        ]
-        alt_lower = random.choice(ALT_LOWER_COLORS)
-        alt_upper = random.choice(ALT_UPPER_NEUTRALS)
-        alt_style_key = "alt_color"
+        from agents.tools.compositor_tools import pick_alt_color_scheme
+        alt_colors = pick_alt_color_scheme(seed=request.project_id)
+        alt_upper = alt_colors["upper"]
+        alt_lower = alt_colors["lower"]
 
         try:
             alt_prompt = (
-                f"Edit this photo: change LOWER cabinet doors and drawers to {alt_lower} flat-panel finish. "
-                f"Change UPPER cabinet doors to {alt_upper} flat-panel finish. "
-                f"Lower and upper cabinets must have DIFFERENT colors (two-tone style). "
-                f"Keep the exact same cabinet structure, layout, positions, sink bowl, cooktop. "
-                f"Handleless flat panels with finger groove along top edge. "
-                f"Keep the same camera angle, perspective, vanishing point. "
-                f"Keep walls, tiles, floor, ceiling identical."
+                f"[EDIT MODE] Edit the first image.\n"
+                f"[PLATE LOCK] Keep exact same camera, perspective, background.\n"
+                f"[WALL TILE LOCK] Keep wall tile identical to original.\n"
+                f"[UPPER COLOR] {alt_upper['prompt']}, exact HEX {alt_upper['hex']}\n"
+                f"[LOWER COLOR] {alt_lower['prompt']}, exact HEX {alt_lower['hex']}\n"
+                f"[COLOR SCHEME] Upper and lower must be DIFFERENT colors (two-tone).\n"
+                f"Keep cabinet structure, layout, positions, sink, cooktop, hood.\n"
+                f"Handleless flat panels with finger groove along top edge."
             )
-            alt_refs = await _fetch_reference_images(request.category, style)
-            alt_b64 = await _call_gemini_image(
-                alt_prompt, furniture_b64, extra_images=alt_refs or None
-            )
+            alt_b64 = await _call_gemini_image(alt_prompt, furniture_b64)
             await _upload_image(request.project_id, request.user_id, alt_b64, "alt_style")
-            logger.info("Alt style generated: lower=%s, upper=%s", alt_lower, alt_upper)
+            logger.info("Alt style: upper=%s, lower=%s", alt_upper["name_ko"], alt_lower["name_ko"])
         except Exception as e:
             logger.warning("Alt style generation failed: %s", e)
 
